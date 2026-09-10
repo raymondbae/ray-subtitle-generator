@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>한국어 자막 생성기</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>한국어 자막 생성기</h1>
+
+  <section id="upload-section">
+    <input type="file" id="file-input" accept=".mp4,.mov,.mkv,.webm,.m4a,.wav,.mp3">
+    <button id="upload-btn">업로드 &amp; 자막 생성</button>
+    <p id="status-text"></p>
+  </section>
+
+  <section id="workspace" hidden>
+    <div id="video-pane">
+      <video id="player" controls></video>
+      <button id="save-btn">자막 저장</button>
+      <a id="download-link" href="#" download="ko.srt">SRT 다운로드</a>
+    </div>
+    <div id="subtitle-pane">
+      <div id="subtitle-list"></div>
+    </div>
+  </section>
+
+  <script src="app.js"></script>
+</body>
+</html>

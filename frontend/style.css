@@ -1,0 +1,78 @@
+body {
+  font-family: -apple-system, "Apple SD Gothic Neo", sans-serif;
+  max-width: 1100px;
+  margin: 24px auto;
+  padding: 0 16px;
+  color: #222;
+}
+
+h1 { font-size: 20px; }
+
+#upload-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+#status-text { color: #555; }
+
+#workspace {
+  display: flex;
+  gap: 24px;
+}
+
+#video-pane {
+  flex: 1;
+  min-width: 320px;
+}
+
+#video-pane video {
+  width: 100%;
+  background: #000;
+}
+
+#video-pane button, #video-pane a {
+  display: inline-block;
+  margin-top: 8px;
+  margin-right: 8px;
+}
+
+#subtitle-pane {
+  flex: 1;
+  max-height: 70vh;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+}
+
+.seg-row {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+}
+
+.seg-row.active { background: #eef6ff; }
+
+.seg-time {
+  flex: 0 0 90px;
+  color: #888;
+  font-size: 12px;
+  padding-top: 6px;
+}
+
+.seg-text {
+  flex: 1;
+  min-height: 20px;
+  padding: 4px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+}
+
+.seg-text:focus {
+  outline: none;
+  border-color: #4a90e2;
+  background: #fff;
+}
