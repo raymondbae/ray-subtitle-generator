@@ -228,6 +228,17 @@ async function loadHistory() {
     date.className = "h-date";
     date.textContent = formatDate(job.created_at);
 
+    const deleteBtn = document.createElement("button");
+    deleteBtn.className = "seg-delete-btn";
+    deleteBtn.textContent = "✕";
+    deleteBtn.title = "이 작업 이력 삭제";
+    deleteBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if (!confirm(`"${job.filename}" 작업 이력을 완전히 삭제할까요? (관련 파일 전부 제거됨)`)) return;
+      await fetch(`/api/videos/${job.job_id}`, { method: "DELETE" });
+      await loadHistory();
+    });
+
     item.addEventListener("click", () => {
       location.href = `/?job=${job.job_id}`;
     });
@@ -235,6 +246,7 @@ async function loadHistory() {
     item.appendChild(name);
     item.appendChild(badge);
     item.appendChild(date);
+    item.appendChild(deleteBtn);
     historyList.appendChild(item);
   });
 }

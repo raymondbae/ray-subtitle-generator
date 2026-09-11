@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import threading
 import time
 import uuid
@@ -158,3 +159,14 @@ def list_jobs() -> list[dict]:
         )
     result.sort(key=lambda j: j["created_at"], reverse=True)
     return result
+
+
+def delete_job(job_id: str) -> bool:
+    """작업 폴더를 디스크에서 완전히 지우고 in-memory 캐시에서도 제거한다."""
+    job_dir = DATA_DIR / job_id
+    if not job_dir.is_dir():
+        return False
+    shutil.rmtree(job_dir)
+    with _lock:
+        _jobs.pop(job_id, None)
+    return True

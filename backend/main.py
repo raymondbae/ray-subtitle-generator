@@ -53,6 +53,14 @@ def list_videos():
     return {"jobs": jobs.list_jobs()}
 
 
+@app.delete("/api/videos/{job_id}")
+def delete_video(job_id: str):
+    """작업 이력을 완전히 삭제한다 (영상/오디오/자막 등 관련 파일 전부 제거)."""
+    if not jobs.delete_job(job_id):
+        raise HTTPException(404, "존재하지 않는 job_id 입니다.")
+    return {"status": "deleted"}
+
+
 class CorrectionIn(BaseModel):
     find: str
     replace: str
