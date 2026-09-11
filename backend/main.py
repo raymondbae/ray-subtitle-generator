@@ -1,7 +1,9 @@
 """FastAPI 앱: 영상 업로드, 자막 생성/조회/수정/다운로드 API."""
 from __future__ import annotations
 
+import subprocess
 import threading
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,9 +11,14 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import corrections
 import jobs
+import preferences
+import qa
 import transcribe
 from srt_utils import Segment, segments_to_srt, srt_to_segments
+
+ALLOWED_EXT = (".mp4", ".mov", ".mkv", ".webm", ".m4a", ".wav", ".mp3")
 
 app = FastAPI(title="ray-subtitle-generator")
 
@@ -36,13 +43,69 @@ class SubtitlesUpdate(BaseModel):
     segments: list[SegmentIn]
 
 
+class LocalPathIn(BaseModel):
+    path: str
+
+
+@app.get("/api/videos")
+def list_videos():
+    """지금까지 만든 작업 이력을 최신순으로 반환한다 (서버 재시작 이후 이력 포함)."""
+    return {"jobs": jobs.list_jobs()}
+
+
+class CorrectionIn(BaseModel):
+    find: str
+    replace: str
+
+
+@app.get("/api/corrections")
+def list_corrections():
+    """저장된 찾기/바꾸기 규칙 목록을 반환한다."""
+    return {"rules": corrections.load_corrections()}
+
+
+@app.post("/api/corrections")
+def add_correction_endpoint(body: CorrectionIn):
+    """전체 바꾸기 규칙을 저장해, 이후 새로 생성되는 자막에 자동으로 적용되게 한다."""
+    rules = corrections.add_correction(body.find, body.replace)
+    return {"rules": rules}
+
+
+@app.delete("/api/corrections")
+def delete_correction_endpoint(find: str):
+    rules = corrections.remove_correction(find)
+    return {"rules": rules}
+
+
+@app.post("/api/pick-file")
+def pick_file():
+    """macOS 네이티브 파일 선택 창을 열어 사용자가 고른 파일의 절대 경로를 반환한다."""
+    script = 'POSIX path of (choose file with prompt "자막을 만들 영상/오디오 파일을 선택하세요")'
+    result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+    if result.returncode != 0:
+        raise HTTPException(400, "파일 선택이 취소되었습니다.")
+    return {"path": result.stdout.strip()}
+
+
+@app.post("/api/videos/local")
+def register_local_video(body: LocalPathIn):
+    """이미 로컬 디스크에 있는 파일을 복사하지 않고 그 경로를 그대로 참조한다."""
+    path = Path(body.path).expanduser().resolve()
+    if not path.is_file():
+        raise HTTPException(400, f"파일을 찾을 수 없습니다: {path}")
+    if not path.name.lower().endswith(ALLOWED_EXT):
+        raise HTTPException(400, f"지원하지 않는 파일 형식입니다. ({', '.join(ALLOWED_EXT)})")
+
+    job = jobs.create_job_from_path(path)
+    return {"job_id": job.job_id, "filename": job.filename, "status": job.status}
+
+
 @app.post("/api/videos")
 async def upload_video(file: UploadFile):
     if not file.filename:
         raise HTTPException(400, "파일 이름이 없습니다.")
-    allowed_ext = (".mp4", ".mov", ".mkv", ".webm", ".m4a", ".wav", ".mp3")
-    if not file.filename.lower().endswith(allowed_ext):
-        raise HTTPException(400, f"지원하지 않는 파일 형식입니다. ({', '.join(allowed_ext)})")
+    if not file.filename.lower().endswith(ALLOWED_EXT):
+        raise HTTPException(400, f"지원하지 않는 파일 형식입니다. ({', '.join(ALLOWED_EXT)})")
 
     job = jobs.create_job(file.filename)
     with open(job.video_path, "wb") as f:
@@ -52,18 +115,151 @@ async def upload_video(file: UploadFile):
     return {"job_id": job.job_id, "filename": job.filename, "status": job.status}
 
 
+@app.post("/api/videos/{job_id}/extract-audio")
+def extract_audio_only(job_id: str):
+    """다른 기기로 옮기기 쉽도록 압축된 오디오만 추출한다 (자막 생성은 하지 않음)."""
+    job = jobs.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "존재하지 않는 job_id 입니다.")
+    try:
+        transcribe.extract_audio_compressed(job.video_path, job.compressed_audio_path)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, str(e))
+    return {"status": "done"}
+
+
+@app.get("/api/videos/{job_id}/extract-audio/download")
+def download_extracted_audio(job_id: str):
+    job = jobs.get_job(job_id)
+    if job is None or not job.compressed_audio_path.exists():
+        raise HTTPException(404, "추출된 오디오를 찾을 수 없습니다.")
+    download_name = Path(job.filename).stem + ".m4a"
+    return FileResponse(job.compressed_audio_path, filename=download_name, media_type="audio/mp4")
+
+
+class BurnStyle(BaseModel):
+    font_size: int = 32
+    primary_colour: str = "&H00FFFFFF"
+    outline_colour: str = "&H00000000"
+    alignment: int = 2
+    margin_v: int = 70
+
+
+class BurnIn(BaseModel):
+    source_path: str
+    style: BurnStyle
+
+
+@app.get("/api/burn-style")
+def get_burn_style():
+    """마지막으로 저장된 자막 굽기 스타일(글자 크기/색/위치 등)을 반환한다."""
+    return preferences.load_burn_style()
+
+
+@app.post("/api/burn-style")
+def save_burn_style(style: BurnStyle):
+    preferences.save_burn_style(style.model_dump())
+    return {"status": "saved"}
+
+
+def _run_burn(job: jobs.Job, source_path: Path, style: dict) -> None:
+    job.burn_proc_holder = {}
+    output_path = job.burn_output_path_for(source_path)
+    try:
+        job.burn_status = "processing"
+        job.burn_progress = 0.0
+        job.burn_message = "자막 굽는 중..."
+        for fraction, current_seconds, duration in transcribe.burn_subtitles(
+            source_path, job.srt_path, output_path, style, proc_holder=job.burn_proc_holder
+        ):
+            job.burn_progress = fraction
+            job.burn_current_seconds = current_seconds
+            job.burn_duration = duration
+            job.burn_message = f"자막 굽는 중... ({round(fraction * 100)}%)"
+        job.burn_status = "done"
+        job.burn_progress = 1.0
+        job.burn_output_path = str(output_path)
+        job.burn_message = "완료"
+    except transcribe.BurnCancelled:
+        job.burn_status = "cancelled"
+        job.burn_message = "사용자가 중지했습니다."
+        output_path.unlink(missing_ok=True)
+    except Exception as e:  # noqa: BLE001
+        job.burn_status = "error"
+        job.burn_message = str(e)
+
+
+@app.post("/api/videos/{job_id}/burn/cancel")
+def cancel_burn(job_id: str):
+    job = jobs.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "존재하지 않는 job_id 입니다.")
+    proc = job.burn_proc_holder.get("proc")
+    if job.burn_status != "processing" or proc is None:
+        raise HTTPException(400, "진행 중인 굽기 작업이 없습니다.")
+    job.burn_proc_holder["cancelled"] = True
+    proc.terminate()
+    return {"status": "cancelling"}
+
+
+@app.post("/api/videos/{job_id}/burn")
+def start_burn(job_id: str, body: BurnIn):
+    job = jobs.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "존재하지 않는 job_id 입니다.")
+    if not job.srt_path.exists():
+        raise HTTPException(400, "완성된 자막이 없습니다.")
+    if job.burn_status == "processing":
+        raise HTTPException(409, "이미 굽는 중입니다.")
+
+    source_path = Path(body.source_path).expanduser().resolve()
+    if not source_path.is_file():
+        raise HTTPException(400, f"영상을 찾을 수 없습니다: {source_path}")
+
+    preferences.save_burn_style(body.style.model_dump())
+
+    thread = threading.Thread(
+        target=_run_burn, args=(job, source_path, body.style.model_dump()), daemon=True
+    )
+    thread.start()
+    return {"status": "processing"}
+
+
+@app.get("/api/videos/{job_id}/burn/status")
+def get_burn_status(job_id: str):
+    job = jobs.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "존재하지 않는 job_id 입니다.")
+    return {
+        "status": job.burn_status,
+        "message": job.burn_message,
+        "progress": job.burn_progress,
+        "current_seconds": job.burn_current_seconds,
+        "duration": job.burn_duration,
+        "output_path": job.burn_output_path,
+    }
+
+
 def _run_transcription(job: jobs.Job) -> None:
     with _process_lock:
         try:
             job.status = "processing"
+            job.progress = 0.0
             job.message = "오디오 추출 중..."
             transcribe.extract_audio(job.video_path, job.audio_path)
 
-            job.message = "음성 인식 중... (영상 길이에 따라 시간이 걸릴 수 있습니다)"
-            segments = transcribe.transcribe_korean(job.audio_path)
+            job.progress = 0.05
+            job.message = "음성 인식 중..."
+            job.segments = []
+            for seg, fraction in transcribe.transcribe_korean(job.audio_path):
+                job.segments.append(seg)
+                job.progress = 0.05 + 0.95 * fraction
+                job.message = f"음성 인식 중... ({round(job.progress * 100)}%)"
 
-            job.srt_path.write_text(segments_to_srt(segments), encoding="utf-8")
+            corrections.apply_corrections(job.segments)
+            job.srt_path.write_text(segments_to_srt(job.segments), encoding="utf-8")
             job.status = "done"
+            job.progress = 1.0
             job.message = "완료"
         except Exception as e:  # noqa: BLE001
             job.status = "error"
@@ -88,7 +284,7 @@ def get_status(job_id: str):
     job = jobs.get_job(job_id)
     if job is None:
         raise HTTPException(404, "존재하지 않는 job_id 입니다.")
-    return {"status": job.status, "message": job.message}
+    return {"status": job.status, "message": job.message, "progress": job.progress}
 
 
 @app.get("/api/videos/{job_id}/video")
@@ -104,10 +300,12 @@ def get_subtitles(job_id: str):
     job = jobs.get_job(job_id)
     if job is None:
         raise HTTPException(404, "존재하지 않는 job_id 입니다.")
-    if not job.srt_path.exists():
-        raise HTTPException(404, "아직 생성된 자막이 없습니다.")
-    segments = srt_to_segments(job.srt_path.read_text(encoding="utf-8"))
-    return {"segments": [s.__dict__ for s in segments]}
+    # 완료된 뒤에는 저장된 srt 파일을, 처리 중에는 지금까지 인식된 세그먼트를 반환한다.
+    if job.srt_path.exists():
+        segments = srt_to_segments(job.srt_path.read_text(encoding="utf-8"))
+    else:
+        segments = job.segments
+    return {"segments": qa.annotate(segments)}
 
 
 @app.put("/api/videos/{job_id}/subtitles")

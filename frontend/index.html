@@ -3,28 +3,100 @@
 <head>
 <meta charset="UTF-8">
 <title>한국어 자막 생성기</title>
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=15">
 </head>
 <body>
-  <h1>한국어 자막 생성기</h1>
+  <header class="app-header">
+    <h1>한국어 자막 생성기</h1>
+    <p class="subtitle">영상을 선택하면 로컬 Whisper가 한국어 자막을 만들어 드려요.</p>
+  </header>
 
-  <section id="upload-section">
-    <input type="file" id="file-input" accept=".mp4,.mov,.mkv,.webm,.m4a,.wav,.mp3">
-    <button id="upload-btn">업로드 &amp; 자막 생성</button>
-    <p id="status-text"></p>
+  <section class="card" id="upload-card">
+    <div class="picker-row">
+      <button id="pick-file-btn" class="btn btn-secondary">
+        <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+        파일 선택
+      </button>
+      <span id="picked-path" class="picked-path">선택된 파일이 없습니다</span>
+      <button id="start-btn" class="btn btn-primary" disabled>자막 생성 시작</button>
+      <button id="extract-audio-btn" class="btn btn-secondary" disabled>오디오만 추출 (다른 기기로 전송용)</button>
+      <button id="history-btn" class="btn btn-secondary">🕘 작업 히스토리</button>
+    </div>
+
+    <div id="progress-wrap" class="progress-wrap" hidden>
+      <div class="progress-track">
+        <div id="progress-fill" class="progress-fill"></div>
+      </div>
+      <div class="progress-label">
+        <span id="progress-message">대기 중</span>
+        <span id="progress-percent">0%</span>
+      </div>
+    </div>
+
+    <div id="history-panel" class="history-panel" hidden>
+      <div id="history-list" class="history-list"></div>
+    </div>
   </section>
 
-  <section id="workspace" hidden>
-    <div id="video-pane">
-      <video id="player" controls></video>
-      <button id="save-btn">자막 저장</button>
-      <a id="download-link" href="#" download="ko.srt">SRT 다운로드</a>
+  <section id="workspace" class="workspace" hidden>
+    <div class="video-pane card">
+      <div class="video-wrap">
+        <video id="player" controls></video>
+        <div id="caption-overlay" class="caption-overlay"></div>
+      </div>
+      <div class="toolbar">
+        <button id="save-btn" class="btn btn-primary">자막 저장</button>
+        <a id="download-link" class="btn btn-secondary" href="#" download="ko.srt">SRT 다운로드</a>
+        <button id="next-flag-btn" class="btn btn-warning">⚠ 다음 확인 필요 구간</button>
+        <button id="undo-btn" class="btn btn-secondary" disabled title="실행 취소 (Ctrl+Z)">↶ 실행 취소</button>
+        <button id="redo-btn" class="btn btn-secondary" disabled title="다시 실행 (Ctrl+Shift+Z)">↷ 다시 실행</button>
+        <span id="save-status" class="save-status"></span>
+      </div>
+
+      <div class="style-panel">
+        <div class="style-row">
+          <label>글자 크기<input type="range" id="style-size" min="20" max="60" value="32"><span id="style-size-val">32</span></label>
+          <label>글자 색<input type="color" id="style-color" value="#ffffff"></label>
+          <label>테두리 색<input type="color" id="style-outline-color" value="#000000"></label>
+        </div>
+        <div class="style-row">
+          <label>위치
+            <select id="style-position">
+              <option value="bottom">하단</option>
+              <option value="middle">중앙</option>
+              <option value="top">상단</option>
+            </select>
+          </label>
+          <label>여백<input type="range" id="style-margin" min="10" max="200" value="70"><span id="style-margin-val">70</span></label>
+        </div>
+        <div class="style-row">
+          <button id="burn-pick-btn" class="btn btn-secondary">📁 구울 영상 파일 선택</button>
+          <span id="burn-source-path" class="picked-path">선택된 파일이 없습니다</span>
+          <button id="burn-btn" class="btn btn-primary" disabled>🔥 이 스타일로 영상에 굽기</button>
+          <button id="burn-cancel-btn" class="btn btn-warning" hidden>⏹ 굽기 중지</button>
+        </div>
+        <div id="burn-progress-wrap" class="progress-wrap" hidden>
+          <div class="progress-track"><div id="burn-progress-fill" class="progress-fill"></div></div>
+          <div class="progress-label">
+            <span id="burn-progress-message">대기 중</span>
+            <span id="burn-progress-percent">0%</span>
+          </div>
+        </div>
+      </div>
     </div>
-    <div id="subtitle-pane">
-      <div id="subtitle-list"></div>
+    <div class="subtitle-pane card">
+      <div class="replace-row">
+        <input type="text" id="find-input" class="replace-input" placeholder="찾을 단어">
+        <button id="find-next-btn" class="btn btn-secondary">🔍 찾기</button>
+        <input type="text" id="replace-input" class="replace-input" placeholder="바꿀 단어">
+        <button id="replace-all-btn" class="btn btn-secondary">전체 바꾸기</button>
+        <button id="next-changed-btn" class="btn btn-warning" hidden>🟡 다음 변경 위치</button>
+        <span id="replace-status" class="save-status"></span>
+      </div>
+      <div id="subtitle-list" class="subtitle-list"></div>
     </div>
   </section>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=15"></script>
 </body>
 </html>
