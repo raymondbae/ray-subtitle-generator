@@ -130,6 +130,68 @@ def burn_subtitles(video_path: Path, srt_path: Path, output_path: Path, style: d
         raise RuntimeError(f"ffmpeg 자막 굽기 실패: {stderr.strip()[-500:]}")
 
 
+def retry_hallucinations(segments: list[Segment], audio_path: Path, padding: float = 2.0) -> list[Segment]:
+    """qa.py가 할루시네이션(반복 등)으로 의심하는 연속 구간을 찾아, 그 구간의 오디오만
+    다시 Whisper에 넣어 재인식한다. 전체 맥락에서 벗어나 그 구간만 단독으로 다시 처리하면
+    반복 루프에서 벗어나 더 정확한 텍스트/타이밍이 나오는 경우가 많다.
+    재시도해도 여전히 이상하면(사람 확인이 필요하면) 원래 결과를 그대로 둔다.
+    """
+    import qa  # 순환 참조 방지를 위해 함수 안에서 import
+
+    if not segments:
+        return segments
+
+    audio = load_audio(str(audio_path))
+    duration = len(audio) / SAMPLE_RATE
+
+    result: list[Segment] = []
+    i = 0
+    n = len(segments)
+    while i < n:
+        if not qa.find_flag(segments, i):
+            result.append(segments[i])
+            i += 1
+            continue
+
+        j = i
+        while j < n and qa.find_flag(segments, j):
+            j += 1
+
+        # qa.find_flag는 반복이 몇 번 누적돼야 감지되기 때문에, 실제 반복은 i보다 더 앞에서
+        # 시작됐을 가능성이 높다. 같은 문장이 이어지는 데까지 시작점을 뒤로 당긴다.
+        cycle_texts = {s.text.strip() for s in segments[i:min(i + 4, j)]}
+        while i > 0 and segments[i - 1].text.strip() in cycle_texts:
+            i -= 1
+            # 이미 result에 확정해 넣었던 것도 다시 재시도 대상에 포함시켜야 하므로 빼낸다.
+            if result and result[-1] is segments[i]:
+                result.pop()
+
+        run = segments[i:j]
+        window_start = max(0.0, run[0].start - padding)
+        window_end = min(duration, run[-1].end + padding)
+        start_sample = int(window_start * SAMPLE_RATE)
+        end_sample = int(window_end * SAMPLE_RATE)
+        chunk = audio[start_sample:end_sample]
+
+        # condition_on_previous_text=True(기본값)면 이전 청크의 반복이 다음 청크에도
+        # 이어서 영향을 줄 수 있어, 재시도할 때는 끄고 독립적으로 다시 인식시킨다.
+        retry_result = mlx_whisper.transcribe(
+            chunk, path_or_hf_repo=_MODEL_REPO, language="ko", condition_on_previous_text=False
+        )
+        new_segs = [
+            Segment(index=0, start=window_start + s["start"], end=window_start + s["end"], text=s["text"].strip())
+            for s in retry_result["segments"]
+        ]
+
+        still_bad = any(qa.find_flag(new_segs, k) for k in range(len(new_segs)))
+        result.extend(new_segs if new_segs and not still_bad else run)
+        i = j
+
+    for idx, seg in enumerate(result, start=1):
+        seg.index = idx
+    return result
+
+
 def transcribe_korean(audio_path: Path):
     """오디오를 한국어로 인식하며 (세그먼트, 진행률 0~1)을 하나씩 생성한다.
 

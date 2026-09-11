@@ -264,6 +264,9 @@ def _run_transcription(job: jobs.Job) -> None:
                 job.progress = 0.05 + 0.95 * fraction
                 job.message = f"음성 인식 중... ({round(job.progress * 100)}%)"
 
+            job.message = "이상 구간(반복 등) 재확인 중..."
+            job.segments = transcribe.retry_hallucinations(job.segments, job.audio_path)
+
             corrections.apply_corrections(job.segments)
             job.srt_path.write_text(segments_to_srt(job.segments), encoding="utf-8")
             job.status = "done"
