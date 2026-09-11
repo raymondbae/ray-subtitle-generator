@@ -12,6 +12,7 @@ DEFAULT_BURN_STYLE = {
     "outline_colour": "&H00000000",
     "alignment": 2,
     "margin_v": 70,
+    "width_percent": 90,
 }
 
 

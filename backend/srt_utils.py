@@ -29,6 +29,15 @@ def _parse_timestamp(ts: str) -> float:
     return int(hours) * 3600 + int(minutes) * 60 + int(secs) + int(ms) / 1000
 
 
+def trim_overlaps(segments: list[Segment]) -> list[Segment]:
+    """연속된 두 세그먼트의 시간이 겹치면 앞 세그먼트의 끝을 다음 세그먼트의 시작에 맞춰 자른다.
+    (긴 오디오를 여러 청크로 나눠 처리할 때 청크 경계에서 흔히 생기는 겹침을 정리)"""
+    for i in range(len(segments) - 1):
+        if segments[i].end > segments[i + 1].start:
+            segments[i].end = segments[i + 1].start
+    return segments
+
+
 def segments_to_srt(segments: list[Segment]) -> str:
     """세그먼트 목록을 SRT 텍스트로 직렬화."""
     blocks = []

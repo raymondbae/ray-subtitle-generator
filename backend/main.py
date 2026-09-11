@@ -12,11 +12,12 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import corrections
+import filler
 import jobs
 import preferences
 import qa
 import transcribe
-from srt_utils import Segment, segments_to_srt, srt_to_segments
+from srt_utils import Segment, segments_to_srt, srt_to_segments, trim_overlaps
 
 ALLOWED_EXT = (".mp4", ".mov", ".mkv", ".webm", ".m4a", ".wav", ".mp3")
 
@@ -85,6 +86,26 @@ def delete_correction_endpoint(find: str):
     return {"rules": rules}
 
 
+class FillerPhraseIn(BaseModel):
+    phrase: str
+
+
+@app.get("/api/filler-phrases")
+def list_filler_phrases():
+    """자막에서 자동으로 제외되는 필러 문구(예: '지나갑니다') 목록을 반환한다."""
+    return {"phrases": filler.load_phrases()}
+
+
+@app.post("/api/filler-phrases")
+def add_filler_phrase_endpoint(body: FillerPhraseIn):
+    return {"phrases": filler.add_phrase(body.phrase)}
+
+
+@app.delete("/api/filler-phrases")
+def delete_filler_phrase_endpoint(phrase: str):
+    return {"phrases": filler.remove_phrase(phrase)}
+
+
 @app.post("/api/pick-file")
 def pick_file():
     """macOS 네이티브 파일 선택 창을 열어 사용자가 고른 파일의 절대 경로를 반환한다."""
@@ -151,6 +172,7 @@ class BurnStyle(BaseModel):
     outline_colour: str = "&H00000000"
     alignment: int = 2
     margin_v: int = 70
+    width_percent: int = 90
 
 
 class BurnIn(BaseModel):
@@ -266,6 +288,12 @@ def _run_transcription(job: jobs.Job) -> None:
 
             job.message = "이상 구간(반복 등) 재확인 중..."
             job.segments = transcribe.retry_hallucinations(job.segments, job.audio_path)
+
+            # 5분 단위 청크로 나눠 처리하다 보니 청크 경계에서 타임스탬프가 겹치는 경우가 있어 정리한다.
+            job.segments = trim_overlaps(job.segments)
+
+            # "지나갑니다" 류의 의미 없는 필러성 한 줄은 자막에서 아예 제외한다.
+            job.segments = filler.filter_filler_segments(job.segments)
 
             corrections.apply_corrections(job.segments)
             job.srt_path.write_text(segments_to_srt(job.segments), encoding="utf-8")

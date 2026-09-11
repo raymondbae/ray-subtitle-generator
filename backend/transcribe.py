@@ -90,6 +90,11 @@ def burn_subtitles(video_path: Path, srt_path: Path, output_path: Path, style: d
     target_bitrate = int(source_bitrate * 1.1) if source_bitrate else 8_000_000
     b_v = f"{target_bitrate}"
 
+    # original_size 기준(1280 너비)에서, 자막 폭 퍼센트만큼만 가운데 정렬로 차지하도록
+    # 좌우 여백(MarginL/MarginR)을 계산한다 -> 한 줄에 들어가는 글자 수를 조절하는 효과.
+    width_percent = max(10, min(100, style.get("width_percent", 90)))
+    margin_lr = round(1280 * (1 - width_percent / 100) / 2)
+
     force_style = (
         f"FontName=Apple SD Gothic Neo,"
         f"FontSize={style.get('font_size', 32)},"
@@ -97,7 +102,8 @@ def burn_subtitles(video_path: Path, srt_path: Path, output_path: Path, style: d
         f"OutlineColour={style.get('outline_colour', '&H00000000')},"
         f"BorderStyle=1,Outline=2,Shadow=1,"
         f"Alignment={style.get('alignment', 2)},"
-        f"MarginV={style.get('margin_v', 70)}"
+        f"MarginV={style.get('margin_v', 70)},"
+        f"MarginL={margin_lr},MarginR={margin_lr}"
     )
     # srt 경로에 콜론/특수문자가 있으면 필터 인자 파싱이 깨지므로 이스케이프한다.
     escaped_srt = str(srt_path).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")

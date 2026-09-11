@@ -32,6 +32,8 @@ const styleOutlineColor = document.getElementById("style-outline-color");
 const stylePosition = document.getElementById("style-position");
 const styleMargin = document.getElementById("style-margin");
 const styleMarginVal = document.getElementById("style-margin-val");
+const styleWidth = document.getElementById("style-width");
+const styleWidthVal = document.getElementById("style-width-val");
 const burnPickBtn = document.getElementById("burn-pick-btn");
 const burnSourcePath = document.getElementById("burn-source-path");
 const burnBtn = document.getElementById("burn-btn");
@@ -435,6 +437,9 @@ function appendSegRow(seg, index) {
       updateFlagCount();
     }
   });
+  text.addEventListener("focus", () => {
+    player.pause();
+  });
   text.addEventListener("blur", () => {
     pushHistory();
     saveSegments("자동 저장됨");
@@ -551,11 +556,13 @@ function applyCaptionStyle() {
   captionOverlay.style.setProperty("--cap-color", styleColor.value);
   captionOverlay.style.setProperty("--cap-outline", styleOutlineColor.value);
   captionOverlay.style.setProperty("--cap-margin", `${styleMargin.value}px`);
+  captionOverlay.style.setProperty("--cap-width", `${styleWidth.value}%`);
   captionOverlay.classList.remove("pos-top", "pos-middle");
   if (stylePosition.value === "top") captionOverlay.classList.add("pos-top");
   if (stylePosition.value === "middle") captionOverlay.classList.add("pos-middle");
   styleSizeVal.textContent = styleSize.value;
   styleMarginVal.textContent = styleMargin.value;
+  styleWidthVal.textContent = styleWidth.value;
 }
 
 function currentStyleForSave() {
@@ -566,6 +573,7 @@ function currentStyleForSave() {
     outline_colour: hexToAssColor(styleOutlineColor.value),
     alignment,
     margin_v: Number(styleMargin.value),
+    width_percent: Number(styleWidth.value),
   };
 }
 
@@ -577,7 +585,7 @@ function saveBurnStylePrefs() {
   });
 }
 
-[styleSize, styleColor, styleOutlineColor, stylePosition, styleMargin].forEach((el) => {
+[styleSize, styleColor, styleOutlineColor, stylePosition, styleMargin, styleWidth].forEach((el) => {
   el.addEventListener("input", applyCaptionStyle);
   el.addEventListener("change", saveBurnStylePrefs);
 });
@@ -594,6 +602,7 @@ async function loadBurnStylePrefs() {
     styleOutlineColor.value = assColorToHex(style.outline_colour);
     stylePosition.value = style.alignment === 8 ? "top" : style.alignment === 5 ? "middle" : "bottom";
     styleMargin.value = style.margin_v;
+    styleWidth.value = style.width_percent || 90;
     applyCaptionStyle();
   } catch {
     // 저장된 값이 없거나 실패하면 기본값 그대로 사용
@@ -647,14 +656,7 @@ burnPickBtn.addEventListener("click", async () => {
 burnBtn.addEventListener("click", async () => {
   if (!jobId || !burnSourcePathValue) return;
 
-  const alignment = stylePosition.value === "top" ? 8 : stylePosition.value === "middle" ? 5 : 2;
-  const style = {
-    font_size: Number(styleSize.value),
-    primary_colour: hexToAssColor(styleColor.value),
-    outline_colour: hexToAssColor(styleOutlineColor.value),
-    alignment,
-    margin_v: Number(styleMargin.value),
-  };
+  const style = currentStyleForSave();
 
   burnBtn.disabled = true;
   burnCancelBtn.hidden = false;
@@ -701,3 +703,51 @@ async function pollBurnStatus() {
     setTimeout(pollBurnStatus, 1000);
   }
 }
+
+// --- 재생 속도 ---------------------------------------------------------------
+document.querySelectorAll(".speed-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    player.playbackRate = Number(btn.dataset.speed);
+    document.querySelectorAll(".speed-btn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+  });
+});
+
+// --- 스페이스바로 재생/정지, 방향키로 이전/다음 자막 이동 -----------------------
+function jumpToSegment(target) {
+  if (!target) return;
+  player.currentTime = target.start;
+  player.play();
+  const rows = subtitleList.querySelectorAll(".seg-row");
+  const idx = segments.indexOf(target);
+  rows[idx]?.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+document.addEventListener("keydown", (e) => {
+  const tag = document.activeElement.tagName;
+  const isEditable = tag === "INPUT" || tag === "TEXTAREA" || document.activeElement.isContentEditable;
+  if (isEditable || workspace.hidden) return;
+
+  if (e.code === "Space") {
+    e.preventDefault();
+    if (player.paused) player.play();
+    else player.pause();
+  } else if (e.code === "ArrowRight") {
+    e.preventDefault();
+    const next = segments.find((seg) => seg.start > player.currentTime + 0.05);
+    jumpToSegment(next);
+  } else if (e.code === "ArrowLeft") {
+    e.preventDefault();
+    const currentIdx = segments.findIndex((seg) => player.currentTime >= seg.start && player.currentTime < seg.end);
+    // 지금 자막의 시작 부분에 이미 있으면 그 이전 자막으로, 자막 중간이면 지금 자막의 시작으로 이동
+    let prev;
+    if (currentIdx > 0 && player.currentTime - segments[currentIdx].start < 0.3) {
+      prev = segments[currentIdx - 1];
+    } else if (currentIdx >= 0) {
+      prev = segments[currentIdx];
+    } else {
+      prev = [...segments].reverse().find((seg) => seg.start < player.currentTime - 0.05);
+    }
+    jumpToSegment(prev);
+  }
+});

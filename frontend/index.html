@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>한국어 자막 생성기</title>
-<link rel="stylesheet" href="style.css?v=16">
+<link rel="stylesheet" href="style.css?v=18">
 </head>
 <body>
   <header class="app-header">
@@ -45,6 +45,12 @@
         <div id="caption-overlay" class="caption-overlay"></div>
       </div>
       <div class="toolbar">
+        <div class="speed-group">
+          <button class="btn btn-secondary speed-btn active" data-speed="1">1x</button>
+          <button class="btn btn-secondary speed-btn" data-speed="2">2x</button>
+          <button class="btn btn-secondary speed-btn" data-speed="3">3x</button>
+          <button class="btn btn-secondary speed-btn" data-speed="4">4x</button>
+        </div>
         <button id="save-btn" class="btn btn-primary">자막 저장</button>
         <a id="download-link" class="btn btn-secondary" href="#" download="ko.srt">SRT 다운로드</a>
         <button id="next-flag-btn" class="btn btn-warning">⚠ 다음 확인 필요 구간</button>
@@ -58,6 +64,7 @@
           <label>글자 크기<input type="range" id="style-size" min="20" max="60" value="32"><span id="style-size-val">32</span></label>
           <label>글자 색<input type="color" id="style-color" value="#ffffff"></label>
           <label>테두리 색<input type="color" id="style-outline-color" value="#000000"></label>
+          <label>자막 폭<input type="range" id="style-width" min="40" max="100" value="90"><span id="style-width-val">90</span>%</label>
         </div>
         <div class="style-row">
           <label>위치
@@ -97,6 +104,6 @@
     </div>
   </section>
 
-  <script src="app.js?v=16"></script>
+  <script src="app.js?v=18"></script>
 </body>
 </html>
