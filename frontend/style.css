@@ -248,9 +248,11 @@ body {
   --cap-margin: 70px;
   --cap-width: 90%;
   position: absolute;
-  left: 50%;
+  left: 0;
+  right: 0;
+  margin-left: auto;
+  margin-right: auto;
   bottom: var(--cap-margin);
-  transform: translateX(-50%);
   max-width: var(--cap-width);
   text-align: center;
   color: var(--cap-color);
@@ -273,7 +275,7 @@ body {
 .caption-overlay.pos-middle {
   top: 50%;
   bottom: auto;
-  transform: translate(-50%, -50%);
+  transform: translateY(-50%);
 }
 
 .toolbar {
