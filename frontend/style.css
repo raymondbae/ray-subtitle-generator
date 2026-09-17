@@ -395,6 +395,16 @@ body {
   font-size: 13px;
 }
 
+.sync-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 4px 12px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+
 .subtitle-list { display: flex; flex-direction: column; }
 
 .seg-row {
@@ -456,6 +466,17 @@ body {
 
 .seg-row.just-changed.active {
   background: rgba(234, 179, 8, 0.28);
+}
+
+.seg-row.selected {
+  background: rgba(37, 99, 235, 0.1);
+  border-left-color: var(--accent);
+}
+
+.seg-select {
+  flex: 0 0 auto;
+  margin-top: 4px;
+  cursor: pointer;
 }
 
 .seg-time {

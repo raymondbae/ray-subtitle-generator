@@ -42,11 +42,16 @@ const burnProgressWrap = document.getElementById("burn-progress-wrap");
 const burnProgressFill = document.getElementById("burn-progress-fill");
 const burnProgressMessage = document.getElementById("burn-progress-message");
 const burnProgressPercent = document.getElementById("burn-progress-percent");
+const syncSelectedCountEl = document.getElementById("sync-selected-count");
+const syncOffsetInput = document.getElementById("sync-offset-input");
+const syncApplyBtn = document.getElementById("sync-apply-btn");
+const syncClearBtn = document.getElementById("sync-clear-btn");
 
 let jobId = null;
 let segments = [];
 let pickedPath = null;
 let changedIndices = [];
+const selectedIndices = new Set();
 
 // --- 실행 취소 / 다시 실행 -------------------------------------------------
 let history = [];
@@ -176,15 +181,41 @@ nextChangedBtn.addEventListener("click", () => {
 // --- 행 삭제 ---------------------------------------------------------------
 function deleteSegment(index) {
   segments.splice(index, 1);
+  selectedIndices.clear(); // 인덱스가 밀려 선택 상태가 어긋나므로 초기화
   renderAllSegments();
   pushHistory();
   saveSegments("자동 저장됨");
 }
 
+// --- 구간 싱크 밀기/당기기 ---------------------------------------------------
+function updateSyncSelectedCount() {
+  syncSelectedCountEl.textContent = `${selectedIndices.size}개 선택됨`;
+}
+
+syncApplyBtn.addEventListener("click", () => {
+  const offset = Number(syncOffsetInput.value);
+  if (!offset || selectedIndices.size === 0) return;
+  selectedIndices.forEach((i) => {
+    const seg = segments[i];
+    if (!seg) return;
+    seg.start = Math.max(0, seg.start + offset);
+    seg.end = Math.max(seg.start + 0.1, seg.end + offset);
+  });
+  renderAllSegments();
+  pushHistory();
+  saveSegments("자동 저장됨");
+});
+
+syncClearBtn.addEventListener("click", () => {
+  selectedIndices.clear();
+  renderAllSegments();
+});
+
 function renderAllSegments() {
   subtitleList.innerHTML = "";
   segments.forEach((seg, i) => appendSegRow(seg, i));
   updateFlagCount();
+  updateSyncSelectedCount();
 }
 
 // URL에 ?job=<id> 가 있으면 새로 생성하지 않고 기존 결과를 바로 불러온다.
@@ -411,6 +442,27 @@ function appendSegRow(seg, index) {
   if (changedIndices.includes(index)) {
     row.classList.add("just-changed");
   }
+  if (selectedIndices.has(index)) {
+    row.classList.add("selected");
+  }
+
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.className = "seg-select";
+  checkbox.checked = selectedIndices.has(index);
+  checkbox.title = "싱크 이동 대상으로 선택";
+  checkbox.addEventListener("click", (e) => {
+    e.stopPropagation();
+  });
+  checkbox.addEventListener("change", () => {
+    if (checkbox.checked) {
+      selectedIndices.add(index);
+    } else {
+      selectedIndices.delete(index);
+    }
+    row.classList.toggle("selected", checkbox.checked);
+    updateSyncSelectedCount();
+  });
 
   const time = document.createElement("div");
   time.className = "seg-time";
@@ -455,12 +507,13 @@ function appendSegRow(seg, index) {
   });
 
   row.addEventListener("click", (e) => {
-    if (e.target !== text && e.target !== deleteBtn) {
+    if (e.target !== text && e.target !== deleteBtn && e.target !== checkbox) {
       player.currentTime = seg.start;
       player.play();
     }
   });
 
+  row.appendChild(checkbox);
   row.appendChild(time);
   row.appendChild(flagIcon);
   row.appendChild(text);
