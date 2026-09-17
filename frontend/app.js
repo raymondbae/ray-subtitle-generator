@@ -46,6 +46,7 @@ const syncSelectedCountEl = document.getElementById("sync-selected-count");
 const syncOffsetInput = document.getElementById("sync-offset-input");
 const syncApplyBtn = document.getElementById("sync-apply-btn");
 const syncClearBtn = document.getElementById("sync-clear-btn");
+const currentTimeDisplay = document.getElementById("current-time-display");
 
 let jobId = null;
 let segments = [];
@@ -589,6 +590,7 @@ player.addEventListener("timeupdate", () => {
     if (active) activeSeg = seg;
   });
   captionOverlay.textContent = activeSeg ? activeSeg.text : "";
+  currentTimeDisplay.textContent = `현재 ${formatTime(player.currentTime)} (${player.currentTime.toFixed(2)}s)`;
 });
 
 // 재생 중 자연스러운 흐름이 아니라, 사용자가 영상 위치를 직접 옮겼을 때만 그 자막으로 스크롤한다.
