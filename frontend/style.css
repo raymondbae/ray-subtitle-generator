@@ -406,6 +406,11 @@ body {
   margin-bottom: 8px;
 }
 
+.sync-offset-input {
+  flex: 0 0 70px;
+  min-width: 0;
+}
+
 .current-time-display {
   font-size: 13px;
   font-weight: 700;

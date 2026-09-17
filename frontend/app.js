@@ -44,7 +44,8 @@ const burnProgressMessage = document.getElementById("burn-progress-message");
 const burnProgressPercent = document.getElementById("burn-progress-percent");
 const syncSelectedCountEl = document.getElementById("sync-selected-count");
 const syncOffsetInput = document.getElementById("sync-offset-input");
-const syncApplyBtn = document.getElementById("sync-apply-btn");
+const syncBackwardBtn = document.getElementById("sync-backward-btn");
+const syncForwardBtn = document.getElementById("sync-forward-btn");
 const syncClearBtn = document.getElementById("sync-clear-btn");
 const currentTimeDisplay = document.getElementById("current-time-display");
 
@@ -193,9 +194,15 @@ function updateSyncSelectedCount() {
   syncSelectedCountEl.textContent = `${selectedIndices.size}개 선택됨`;
 }
 
-syncApplyBtn.addEventListener("click", () => {
-  const offset = Number(syncOffsetInput.value);
-  if (!offset || selectedIndices.size === 0) return;
+function applySyncOffset(sign) {
+  const amount = Math.abs(Number(syncOffsetInput.value));
+  if (selectedIndices.size === 0) {
+    syncSelectedCountEl.textContent = "⚠ 먼저 자막 줄의 체크박스를 선택하세요";
+    setTimeout(updateSyncSelectedCount, 2000);
+    return;
+  }
+  if (!amount) return;
+  const offset = amount * sign;
   selectedIndices.forEach((i) => {
     const seg = segments[i];
     if (!seg) return;
@@ -205,7 +212,11 @@ syncApplyBtn.addEventListener("click", () => {
   renderAllSegments();
   pushHistory();
   saveSegments("자동 저장됨");
-});
+}
+
+// "앞으로 밀기" = 더 일찍(빨리) 나오게, "뒤로 밀기" = 더 늦게 나오게
+syncBackwardBtn.addEventListener("click", () => applySyncOffset(-1));
+syncForwardBtn.addEventListener("click", () => applySyncOffset(1));
 
 syncClearBtn.addEventListener("click", () => {
   selectedIndices.clear();
