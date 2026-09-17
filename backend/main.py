@@ -300,6 +300,7 @@ def _run_transcription(job: jobs.Job) -> None:
             job.status = "done"
             job.progress = 1.0
             job.message = "완료"
+            _start_proxy_generation(job)
         except Exception as e:  # noqa: BLE001
             job.status = "error"
             job.message = str(e)
@@ -326,11 +327,31 @@ def get_status(job_id: str):
     return {"status": job.status, "message": job.message, "progress": job.progress}
 
 
+def _run_make_proxy(job: jobs.Job) -> None:
+    try:
+        transcribe.make_preview_proxy(job.video_path, job.proxy_path)
+    except Exception:  # noqa: BLE001
+        pass  # 실패해도 원본으로 계속 서빙되므로 사용자에게 보여줄 필요 없다.
+    finally:
+        job.proxy_generating = False
+
+
+def _start_proxy_generation(job: jobs.Job) -> None:
+    if job.proxy_path.exists() or job.proxy_generating:
+        return
+    job.proxy_generating = True
+    threading.Thread(target=_run_make_proxy, args=(job,), daemon=True).start()
+
+
 @app.get("/api/videos/{job_id}/video")
 def get_video(job_id: str):
     job = jobs.get_job(job_id)
     if job is None or not job.video_path.exists():
         raise HTTPException(404, "영상을 찾을 수 없습니다.")
+    if job.proxy_path.exists():
+        return FileResponse(job.proxy_path)
+    if job.status == "done":
+        _start_proxy_generation(job)
     return FileResponse(job.video_path)
 
 

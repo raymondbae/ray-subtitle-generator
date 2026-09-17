@@ -43,6 +43,9 @@ class Job:
         self.burn_duration: float = 0.0
         self.burn_output_path: str | None = None
 
+        # 미리보기용 저해상도 프록시 생성 상태 (메모리에만 보관, 재시작 시 리셋되어도 무방)
+        self.proxy_generating: bool = False
+
     @property
     def dir(self) -> Path:
         return DATA_DIR / self.job_id
@@ -64,6 +67,11 @@ class Job:
     @property
     def compressed_audio_path(self) -> Path:
         return self.dir / "audio_small.m4a"
+
+    @property
+    def proxy_path(self) -> Path:
+        """미리보기 재생용 720p 다운스케일 프록시. 굽기는 이 파일을 쓰지 않고 원본을 그대로 사용한다."""
+        return self.dir / "preview.mp4"
 
     def burn_output_path_for(self, source_path: Path) -> Path:
         """구운 영상은 원본과 같은 디렉토리에, 원본 이름 뒤에 '_자막입힘_생성일시'를 붙여 저장한다.

@@ -76,6 +76,47 @@ def get_video_bitrate(video_path: Path) -> int | None:
     return None
 
 
+def get_video_resolution(video_path: Path) -> tuple[int, int] | None:
+    """원본 영상의 (width, height)를 가져온다. 구할 수 없으면 None."""
+    result = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=width,height",
+         "-of", "csv=s=x:p=0", str(video_path)],
+        capture_output=True, text=True,
+    )
+    match = re.match(r"(\d+)x(\d+)", result.stdout.strip())
+    if not match:
+        return None
+    return int(match.group(1)), int(match.group(2))
+
+
+def make_preview_proxy(video_path: Path, output_path: Path) -> None:
+    """미리보기 재생이 버벅이지 않도록 720p로 다운스케일한 프록시를 만든다.
+    이미 720p 이하인 영상은 프록시가 필요 없으므로 아무것도 하지 않고 반환한다
+    (호출 측은 output_path가 생기지 않으면 원본을 계속 서빙한다).
+    굽기(burn_subtitles)는 이 프록시를 쓰지 않고 항상 원본 영상을 사용한다.
+    """
+    resolution = get_video_resolution(video_path)
+    if resolution is None or resolution[1] <= 720:
+        return
+
+    tmp_path = output_path.with_suffix(".tmp.mp4")
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", str(video_path),
+        "-vf", "scale=-2:720",
+        "-c:v", "h264_videotoolbox", "-b:v", "3M",
+        "-c:a", "aac", "-b:a", "128k",
+        "-movflags", "+faststart",
+        str(tmp_path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        tmp_path.unlink(missing_ok=True)
+        raise RuntimeError(f"ffmpeg 미리보기 프록시 생성 실패: {result.stderr.strip()[-500:]}")
+    tmp_path.replace(output_path)
+
+
 def burn_subtitles(video_path: Path, srt_path: Path, output_path: Path, style: dict, proc_holder: dict | None = None):
     """스타일이 적용된 자막을 영상에 구워 넣으며 (진행률 0~1, 현재 초, 전체 길이(초))를 하나씩 생성한다.
 
