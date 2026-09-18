@@ -46,6 +46,7 @@ const syncSelectedCountEl = document.getElementById("sync-selected-count");
 const syncOffsetInput = document.getElementById("sync-offset-input");
 const syncBackwardBtn = document.getElementById("sync-backward-btn");
 const syncForwardBtn = document.getElementById("sync-forward-btn");
+const syncSnapBtn = document.getElementById("sync-snap-btn");
 const syncClearBtn = document.getElementById("sync-clear-btn");
 const currentTimeDisplay = document.getElementById("current-time-display");
 
@@ -194,15 +195,14 @@ function updateSyncSelectedCount() {
   syncSelectedCountEl.textContent = `${selectedIndices.size}개 선택됨`;
 }
 
-function applySyncOffset(sign) {
-  const amount = Math.abs(Number(syncOffsetInput.value));
-  if (selectedIndices.size === 0) {
-    syncSelectedCountEl.textContent = "⚠ 먼저 자막 줄의 체크박스를 선택하세요";
-    setTimeout(updateSyncSelectedCount, 2000);
-    return;
-  }
-  if (!amount) return;
-  const offset = amount * sign;
+function requireSelection() {
+  if (selectedIndices.size > 0) return true;
+  syncSelectedCountEl.textContent = "⚠ 먼저 자막 줄의 체크박스를 선택하세요";
+  setTimeout(updateSyncSelectedCount, 2000);
+  return false;
+}
+
+function shiftSelected(offset) {
   selectedIndices.forEach((i) => {
     const seg = segments[i];
     if (!seg) return;
@@ -214,9 +214,28 @@ function applySyncOffset(sign) {
   saveSegments("자동 저장됨");
 }
 
+function applySyncOffset(sign) {
+  if (!requireSelection()) return;
+  const amount = Math.abs(Number(syncOffsetInput.value));
+  if (!amount) return;
+  shiftSelected(amount * sign);
+}
+
 // "앞으로 밀기" = 더 일찍(빨리) 나오게, "뒤로 밀기" = 더 늦게 나오게
 syncBackwardBtn.addEventListener("click", () => applySyncOffset(-1));
 syncForwardBtn.addEventListener("click", () => applySyncOffset(1));
+
+// 선택된 줄들 중 가장 앞선 줄의 시작 시각을 "현재 재생 위치"에 맞추고,
+// 나머지 선택된 줄들도 같은 만큼(상대 간격을 유지하며) 이동시킨다.
+// -> 오프셋을 직접 계산해서 입력할 필요 없이 정확히 맞출 수 있다.
+syncSnapBtn.addEventListener("click", () => {
+  if (!requireSelection()) return;
+  const firstIdx = Math.min(...selectedIndices);
+  const seg0 = segments[firstIdx];
+  if (!seg0) return;
+  const offset = player.currentTime - seg0.start;
+  shiftSelected(offset);
+});
 
 syncClearBtn.addEventListener("click", () => {
   selectedIndices.clear();
