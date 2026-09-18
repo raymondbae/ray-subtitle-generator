@@ -47,6 +47,7 @@ const syncOffsetInput = document.getElementById("sync-offset-input");
 const syncBackwardBtn = document.getElementById("sync-backward-btn");
 const syncForwardBtn = document.getElementById("sync-forward-btn");
 const syncSnapBtn = document.getElementById("sync-snap-btn");
+const syncSelectToEndBtn = document.getElementById("sync-select-to-end-btn");
 const syncClearBtn = document.getElementById("sync-clear-btn");
 const currentTimeDisplay = document.getElementById("current-time-display");
 
@@ -235,6 +236,17 @@ syncSnapBtn.addEventListener("click", () => {
   if (!seg0) return;
   const offset = player.currentTime - seg0.start;
   shiftSelected(offset);
+});
+
+// 드리프트가 한 지점부터 끝까지 계속되는 경우, 한 줄씩 체크하기 번거로우므로
+// 이미 선택된 줄들 중 가장 앞선 줄부터 마지막 줄까지를 한꺼번에 선택에 추가한다.
+syncSelectToEndBtn.addEventListener("click", () => {
+  if (!requireSelection()) return;
+  const fromIdx = Math.min(...selectedIndices);
+  for (let i = fromIdx; i < segments.length; i++) {
+    selectedIndices.add(i);
+  }
+  renderAllSegments();
 });
 
 syncClearBtn.addEventListener("click", () => {
