@@ -203,8 +203,8 @@ function requireSelection() {
   return false;
 }
 
-function shiftSelected(offset) {
-  selectedIndices.forEach((i) => {
+function shiftIndices(indices, offset) {
+  indices.forEach((i) => {
     const seg = segments[i];
     if (!seg) return;
     seg.start = Math.max(0, seg.start + offset);
@@ -215,11 +215,21 @@ function shiftSelected(offset) {
   saveSegments("자동 저장됨");
 }
 
+function shiftSelected(offset) {
+  shiftIndices(selectedIndices, offset);
+}
+
 function applySyncOffset(sign) {
   if (!requireSelection()) return;
   const amount = Math.abs(Number(syncOffsetInput.value));
   if (!amount) return;
   shiftSelected(amount * sign);
+}
+
+// 자막 줄 옆 ◀/▶ 아이콘: 체크 여부와 무관하게 그 줄 하나만 밀거나 당긴다.
+function nudgeSegment(index, sign) {
+  const amount = Math.abs(Number(syncOffsetInput.value)) || 0.1;
+  shiftIndices([index], amount * sign);
 }
 
 // "앞으로 밀기" = 더 일찍(빨리) 나오게, "뒤로 밀기" = 더 늦게 나오게
@@ -507,9 +517,37 @@ function appendSegRow(seg, index) {
     updateSyncSelectedCount();
   });
 
+  const playBtn = document.createElement("button");
+  playBtn.className = "seg-play-btn";
+  playBtn.textContent = "▷";
+  playBtn.title = "이 위치부터 재생";
+  playBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    player.currentTime = seg.start;
+    player.play();
+  });
+
   const time = document.createElement("div");
   time.className = "seg-time";
   time.textContent = `${formatTime(seg.start)} - ${formatTime(seg.end)}`;
+
+  const nudgeBackBtn = document.createElement("button");
+  nudgeBackBtn.className = "seg-nudge-btn";
+  nudgeBackBtn.textContent = "◀";
+  nudgeBackBtn.title = "이 줄만 앞으로 밀기 (더 일찍)";
+  nudgeBackBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    nudgeSegment(index, -1);
+  });
+
+  const nudgeForwardBtn = document.createElement("button");
+  nudgeForwardBtn.className = "seg-nudge-btn";
+  nudgeForwardBtn.textContent = "▶";
+  nudgeForwardBtn.title = "이 줄만 뒤로 밀기 (더 늦게)";
+  nudgeForwardBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    nudgeSegment(index, 1);
+  });
 
   const flagIcon = document.createElement("div");
   flagIcon.className = "flag-icon";
@@ -549,15 +587,11 @@ function appendSegRow(seg, index) {
     deleteSegment(index);
   });
 
-  row.addEventListener("click", (e) => {
-    if (e.target !== text && e.target !== deleteBtn && e.target !== checkbox) {
-      player.currentTime = seg.start;
-      player.play();
-    }
-  });
-
   row.appendChild(checkbox);
+  row.appendChild(playBtn);
   row.appendChild(time);
+  row.appendChild(nudgeBackBtn);
+  row.appendChild(nudgeForwardBtn);
   row.appendChild(flagIcon);
   row.appendChild(text);
   row.appendChild(deleteBtn);

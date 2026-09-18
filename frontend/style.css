@@ -427,9 +427,32 @@ body {
   gap: 12px;
   padding: 10px 12px;
   border-radius: 8px;
-  cursor: pointer;
   border-left: 3px solid transparent;
   transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.seg-play-btn,
+.seg-nudge-btn {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  margin-top: 2px;
+}
+
+.seg-play-btn:hover,
+.seg-nudge-btn:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
 }
 
 .seg-delete-btn {
