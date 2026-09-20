@@ -11,7 +11,7 @@ from mlx_whisper.audio import SAMPLE_RATE, load_audio
 from srt_utils import Segment
 
 _MODEL_REPO = "mlx-community/whisper-medium-mlx"
-_CHUNK_SECONDS = 300  # 5분 단위로 나눠서 처리 -> 진행률/실시간 자막 업데이트용
+_CHUNK_SECONDS = 60  # 1분 단위로 나눠서 처리 -> 진행률/실시간 자막 업데이트 + 청크가 짧을수록 타임스탬프 드리프트가 덜 누적됨
 
 
 class BurnCancelled(Exception):
