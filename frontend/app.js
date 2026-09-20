@@ -454,6 +454,7 @@ async function pollStatus() {
 
   if (data.status === "done") {
     progressWrap.hidden = true;
+    await finalizeSubtitles();
     pushHistory();
   } else if (data.status === "error") {
     progressMessage.textContent = "오류: " + data.message;
@@ -477,6 +478,20 @@ async function syncSubtitles() {
   }
   subtitleList.scrollTop = subtitleList.scrollHeight;
   updateFlagCount();
+}
+
+// 자막 생성이 끝나면, 처리 중 스트리밍된 것과 개수가 다를 수 있으므로(할루시네이션/필러
+// 제거로 줄어들 수 있음) 최종본으로 통째로 다시 불러와 화면을 맞추고 확인 필요 개수를 알려준다.
+async function finalizeSubtitles() {
+  const res = await fetch(`/api/videos/${jobId}/subtitles`);
+  if (!res.ok) return;
+  const data = await res.json();
+  segments = data.segments;
+  renderAllSegments();
+  const flagCount = segments.filter((s) => s.flag).length;
+  if (flagCount > 0) {
+    alert(`자막 생성이 끝났습니다.\n⚠ 확인이 필요한 구간이 ${flagCount}곳 있어요 ("다음 확인 필요 구간" 버튼으로 하나씩 훑어보세요).`);
+  }
 }
 
 function formatTime(sec) {
