@@ -384,7 +384,8 @@ def download_subtitles(job_id: str):
     job = jobs.get_job(job_id)
     if job is None or not job.srt_path.exists():
         raise HTTPException(404, "자막 파일을 찾을 수 없습니다.")
-    return FileResponse(job.srt_path, filename="ko.srt", media_type="application/x-subrip")
+    download_name = Path(job.filename).stem + ".srt"
+    return FileResponse(job.srt_path, filename=download_name, media_type="application/x-subrip")
 
 
 app.mount("/", StaticFiles(directory="../frontend", html=True), name="frontend")
