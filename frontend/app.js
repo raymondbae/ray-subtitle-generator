@@ -1,4 +1,6 @@
 const pickFileBtn = document.getElementById("pick-file-btn");
+const uploadFileBtn = document.getElementById("upload-file-btn");
+const uploadFileInput = document.getElementById("upload-file-input");
 const pickedPathEl = document.getElementById("picked-path");
 const startBtn = document.getElementById("start-btn");
 const extractAudioBtn = document.getElementById("extract-audio-btn");
@@ -14,6 +16,7 @@ const saveStatus = document.getElementById("save-status");
 const downloadLink = document.getElementById("download-link");
 const subtitleList = document.getElementById("subtitle-list");
 const nextFlagBtn = document.getElementById("next-flag-btn");
+const deleteRepeatBtn = document.getElementById("delete-repeat-btn");
 const undoBtn = document.getElementById("undo-btn");
 const redoBtn = document.getElementById("redo-btn");
 const findInput = document.getElementById("find-input");
@@ -367,6 +370,35 @@ pickFileBtn.addEventListener("click", async () => {
   extractAudioBtn.disabled = false;
 });
 
+// 원격(다른 기기)에서 접속했을 때를 위해, 서버 로컬 파일 선택 대신 브라우저에서
+// 직접 파일을 골라 서버로 업로드한다 (음성 파일처럼 작은 파일을 옮길 때 유용).
+uploadFileBtn.addEventListener("click", () => uploadFileInput.click());
+
+uploadFileInput.addEventListener("change", async () => {
+  const file = uploadFileInput.files[0];
+  uploadFileInput.value = ""; // 같은 파일을 다시 선택해도 change가 발생하도록 초기화
+  if (!file) return;
+
+  setProgress(`업로드 중... (${file.name})`, 0);
+  const formData = new FormData();
+  formData.append("file", file);
+  try {
+    const res = await fetch("/api/videos", { method: "POST", body: formData });
+    if (!res.ok) {
+      throw new Error(await res.text());
+    }
+    const data = await res.json();
+    jobId = data.job_id;
+    pickedPath = null; // 로컬 경로가 아니라 이미 서버에 업로드된 job이므로
+    pickedPathEl.textContent = `업로드됨: ${data.filename}`;
+    startBtn.disabled = false;
+    extractAudioBtn.disabled = true; // 이미 서버에 있는 파일이라 "다른 기기로 전송용 추출"은 의미 없음
+    progressWrap.hidden = true;
+  } catch (e) {
+    setProgress("업로드 실패: " + e.message, 0);
+  }
+});
+
 // 선택된 경로를 아직 등록하지 않았다면 job으로 등록하고 job_id를 반환한다.
 async function ensureJob() {
   if (jobId) return jobId;
@@ -386,7 +418,7 @@ async function ensureJob() {
 }
 
 startBtn.addEventListener("click", async () => {
-  if (!pickedPath) return;
+  if (!pickedPath && !jobId) return;
   startBtn.disabled = true;
   extractAudioBtn.disabled = true;
   pickFileBtn.disabled = true;
@@ -637,6 +669,32 @@ nextFlagBtn.addEventListener("click", () => {
   const rows = subtitleList.querySelectorAll(".seg-row");
   const idx = segments.indexOf(target);
   rows[idx]?.scrollIntoView({ block: "center", behavior: "smooth" });
+});
+
+// 지금 재생 중인 자막과 같은 문장이 앞뒤로 연속 반복되는 구간을 한번에 찾아 지운다.
+// (예: "이곳은 전국의 한 지방에 있는 한 곳입니다." 같은 문장이 10줄 넘게 똑같이 반복되는 할루시네이션)
+deleteRepeatBtn.addEventListener("click", () => {
+  const idx = segments.findIndex((seg) => player.currentTime >= seg.start && player.currentTime < seg.end);
+  if (idx === -1) {
+    alert("먼저 반복되는 자막 줄을 재생 중인 상태에서 눌러주세요 (▷ 버튼으로 재생).");
+    return;
+  }
+  const text = segments[idx].text.trim();
+  if (!text) return;
+  let start = idx;
+  let end = idx;
+  while (start > 0 && segments[start - 1].text.trim() === text) start--;
+  while (end < segments.length - 1 && segments[end + 1].text.trim() === text) end++;
+  const count = end - start + 1;
+  if (count <= 1) {
+    alert(`"${text}"\n앞뒤로 똑같이 반복되는 줄이 없어요 (이 줄 하나뿐).`);
+    return;
+  }
+  if (!confirm(`"${text}"\n이 문장이 연속으로 ${count}번 반복되고 있어요. 전부 삭제할까요?`)) return;
+  segments.splice(start, count);
+  renderAllSegments();
+  pushHistory();
+  saveSegments("자동 저장됨");
 });
 
 // 단어 검색: 현재 재생 위치 다음에 있는 첫 매치로 이동 (계속 누르면 다음 매치로 순환)

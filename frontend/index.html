@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>한국어 자막 생성기</title>
-<link rel="stylesheet" href="style.css?v=29">
+<link rel="stylesheet" href="style.css?v=31">
 </head>
 <body>
   <header class="app-header">
@@ -17,6 +17,8 @@
         <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
         파일 선택
       </button>
+      <button id="upload-file-btn" class="btn btn-secondary">🎤 음성/영상 파일 업로드</button>
+      <input type="file" id="upload-file-input" accept=".m4a,.wav,.mp3,.mp4,.mov,.mkv,.webm" hidden>
       <span id="picked-path" class="picked-path">선택된 파일이 없습니다</span>
       <button id="start-btn" class="btn btn-primary" disabled>자막 생성 시작</button>
       <button id="extract-audio-btn" class="btn btn-secondary" disabled>오디오만 추출 (다른 기기로 전송용)</button>
@@ -54,6 +56,7 @@
         <button id="save-btn" class="btn btn-primary">자막 저장</button>
         <a id="download-link" class="btn btn-secondary" href="#" download>SRT 다운로드</a>
         <button id="next-flag-btn" class="btn btn-warning">⚠ 다음 확인 필요 구간</button>
+        <button id="delete-repeat-btn" class="btn btn-warning">🗑 반복 구간 일괄삭제</button>
         <button id="undo-btn" class="btn btn-secondary" disabled title="실행 취소 (Ctrl+Z)">↶ 실행 취소</button>
         <button id="redo-btn" class="btn btn-secondary" disabled title="다시 실행 (Ctrl+Shift+Z)">↷ 다시 실행</button>
         <span id="save-status" class="save-status"></span>
@@ -116,6 +119,6 @@
     </div>
   </section>
 
-  <script src="app.js?v=29"></script>
+  <script src="app.js?v=31"></script>
 </body>
 </html>
