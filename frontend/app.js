@@ -17,6 +17,7 @@ const downloadLink = document.getElementById("download-link");
 const subtitleList = document.getElementById("subtitle-list");
 const nextFlagBtn = document.getElementById("next-flag-btn");
 const deleteRepeatBtn = document.getElementById("delete-repeat-btn");
+const deleteAllFlaggedBtn = document.getElementById("delete-all-flagged-btn");
 const undoBtn = document.getElementById("undo-btn");
 const redoBtn = document.getElementById("redo-btn");
 const findInput = document.getElementById("find-input");
@@ -692,6 +693,21 @@ deleteRepeatBtn.addEventListener("click", () => {
   }
   if (!confirm(`"${text}"\n이 문장이 연속으로 ${count}번 반복되고 있어요. 전부 삭제할까요?`)) return;
   segments.splice(start, count);
+  renderAllSegments();
+  pushHistory();
+  saveSegments("자동 저장됨");
+});
+
+// ⚠ 표시된("확인 필요") 줄을 전부 한번에 지운다. 헛소리/잡음이 너무 광범위하게
+// 껴 있어서 하나씩 확인하기보다 그냥 다 지우고 싶을 때 사용 (실행취소로 되돌릴 수 있음).
+deleteAllFlaggedBtn.addEventListener("click", () => {
+  const flaggedCount = segments.filter((s) => s.flag).length;
+  if (flaggedCount === 0) {
+    alert("확인이 필요한 구간이 없습니다.");
+    return;
+  }
+  if (!confirm(`⚠ 확인 필요 표시된 ${flaggedCount}개 줄을 전부 삭제할까요?\n(실행취소(Ctrl+Z)로 되돌릴 수 있습니다)`)) return;
+  segments = segments.filter((s) => !s.flag);
   renderAllSegments();
   pushHistory();
   saveSegments("자동 저장됨");
