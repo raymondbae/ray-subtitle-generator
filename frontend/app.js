@@ -403,6 +403,7 @@ uploadFileInput.addEventListener("change", async () => {
     }
     const data = await res.json();
     jobId = data.job_id;
+    window.history.replaceState(null, "", `?job=${jobId}`); // 새로고침해도 이 job으로 이어지도록 주소창에 반영
     pickedPath = null; // 로컬 경로가 아니라 이미 서버에 업로드된 job이므로
     pickedPathEl.textContent = `업로드됨: ${data.filename}`;
     startBtn.disabled = false;
@@ -426,6 +427,7 @@ async function ensureJob() {
   }
   const data = await res.json();
   jobId = data.job_id;
+  window.history.replaceState(null, "", `?job=${jobId}`); // 새로고침해도 이 job으로 이어지도록 주소창에 반영
   player.src = `/api/videos/${jobId}/video`;
   downloadLink.href = `/api/videos/${jobId}/subtitles/download`;
   return jobId;
