@@ -21,6 +21,18 @@ from srt_utils import Segment, segments_to_srt, srt_to_segments, trim_overlaps
 
 ALLOWED_EXT = (".mp4", ".mov", ".mkv", ".webm", ".m4a", ".wav", ".mp3")
 
+# Python의 mimetypes 기본 추정값이 브라우저 <video>/<audio> 태그에서 재생 안 되는
+# 경우가 있어(.m4a -> audio/mp4a-latm 등 비표준 타입), 재생에 필요한 확장자만 직접 매핑한다.
+_MEDIA_TYPE_OVERRIDES = {
+    ".m4a": "audio/mp4",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+}
+
+
+def _guess_media_type(path: Path) -> str | None:
+    return _MEDIA_TYPE_OVERRIDES.get(path.suffix.lower())
+
 app = FastAPI(title="ray-subtitle-generator")
 
 app.add_middleware(
@@ -352,7 +364,7 @@ def get_video(job_id: str):
         return FileResponse(job.proxy_path)
     if job.status == "done":
         _start_proxy_generation(job)
-    return FileResponse(job.video_path)
+    return FileResponse(job.video_path, media_type=_guess_media_type(job.video_path))
 
 
 @app.get("/api/videos/{job_id}/subtitles")
