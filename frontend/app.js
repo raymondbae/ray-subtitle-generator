@@ -1,6 +1,8 @@
 const pickFileBtn = document.getElementById("pick-file-btn");
 const uploadFileBtn = document.getElementById("upload-file-btn");
 const uploadFileInput = document.getElementById("upload-file-input");
+const attachSrtBtn = document.getElementById("attach-srt-btn");
+const attachSrtInput = document.getElementById("attach-srt-input");
 const pickedPathEl = document.getElementById("picked-path");
 const startBtn = document.getElementById("start-btn");
 const extractAudioBtn = document.getElementById("extract-audio-btn");
@@ -417,6 +419,44 @@ async function ensureJob() {
   downloadLink.href = `/api/videos/${jobId}/subtitles/download`;
   return jobId;
 }
+
+// 다른 기기(M1 등)에서 이미 완성해둔 SRT를 영상과 짝지어 붙인다.
+// 인식 과정 없이 바로 검수/미리보기/굽기가 가능한 상태로 넘어간다.
+attachSrtBtn.addEventListener("click", () => {
+  if (!pickedPath && !jobId) {
+    alert("먼저 영상을 선택하거나 업로드하세요.");
+    return;
+  }
+  attachSrtInput.click();
+});
+
+attachSrtInput.addEventListener("change", async () => {
+  const file = attachSrtInput.files[0];
+  attachSrtInput.value = "";
+  if (!file) return;
+
+  setProgress(`SRT 붙이는 중... (${file.name})`, 0);
+  try {
+    await ensureJob();
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch(`/api/videos/${jobId}/subtitles/upload`, { method: "POST", body: formData });
+    if (!res.ok) {
+      throw new Error(await res.text());
+    }
+    progressWrap.hidden = true;
+    workspace.hidden = false;
+    segments = [];
+    subtitleList.innerHTML = "";
+    history = [];
+    historyIndex = -1;
+    updateUndoRedoButtons();
+    await finalizeSubtitles();
+    pushHistory();
+  } catch (e) {
+    setProgress("SRT 붙이기 실패: " + e.message, 0);
+  }
+});
 
 startBtn.addEventListener("click", async () => {
   if (!pickedPath && !jobId) return;

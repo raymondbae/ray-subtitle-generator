@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>한국어 자막 생성기</title>
-<link rel="stylesheet" href="style.css?v=32">
+<link rel="stylesheet" href="style.css?v=33">
 </head>
 <body>
   <header class="app-header">
@@ -21,6 +21,8 @@
       <input type="file" id="upload-file-input" accept=".m4a,.wav,.mp3,.mp4,.mov,.mkv,.webm" hidden>
       <span id="picked-path" class="picked-path">선택된 파일이 없습니다</span>
       <button id="start-btn" class="btn btn-primary" disabled>자막 생성 시작</button>
+      <button id="attach-srt-btn" class="btn btn-secondary">📝 완성된 SRT 붙이기</button>
+      <input type="file" id="attach-srt-input" accept=".srt" hidden>
       <button id="extract-audio-btn" class="btn btn-secondary" disabled>오디오만 추출 (다른 기기로 전송용)</button>
       <button id="history-btn" class="btn btn-secondary">🕘 작업 히스토리</button>
     </div>
@@ -120,6 +122,6 @@
     </div>
   </section>
 
-  <script src="app.js?v=32"></script>
+  <script src="app.js?v=33"></script>
 </body>
 </html>

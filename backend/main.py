@@ -391,6 +391,29 @@ def update_subtitles(job_id: str, body: SubtitlesUpdate):
     return {"status": "saved"}
 
 
+@app.post("/api/videos/{job_id}/subtitles/upload")
+async def upload_subtitles(job_id: str, file: UploadFile):
+    """다른 기기에서 이미 완성해둔 SRT 파일을 그대로 붙여서, 인식 과정 없이
+    바로 미리보기/검수/굽기가 가능한 상태(done)로 만든다."""
+    job = jobs.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "존재하지 않는 job_id 입니다.")
+    content = (await file.read()).decode("utf-8", errors="replace")
+    try:
+        segments = srt_to_segments(content)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, f"SRT 파일을 읽을 수 없습니다: {e}")
+    if not segments:
+        raise HTTPException(400, "빈 자막 파일입니다.")
+
+    job.srt_path.write_text(segments_to_srt(segments), encoding="utf-8")
+    job.status = "done"
+    job.progress = 1.0
+    job.message = "완료"
+    _start_proxy_generation(job)
+    return {"status": "done", "segments": len(segments)}
+
+
 @app.get("/api/videos/{job_id}/subtitles/download")
 def download_subtitles(job_id: str):
     job = jobs.get_job(job_id)
