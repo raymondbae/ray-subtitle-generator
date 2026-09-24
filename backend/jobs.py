@@ -45,6 +45,16 @@ class Job:
 
         # 미리보기용 저해상도 프록시 생성 상태 (메모리에만 보관, 재시작 시 리셋되어도 무방)
         self.proxy_generating: bool = False
+        self.proxy_proc_holder: dict = {}  # 실행 중인 프록시 ffmpeg 프로세스를 담아, 굽기가 시작되면 양보받기 위해 중지에 사용
+
+        # 무음(말 없는) 구간 잘라내기 작업 상태
+        self.cut_status: str = "idle"  # idle | processing | done | error | cancelled
+        self.cut_message: str = ""
+        self.cut_progress: float = 0.0
+        self.cut_proc_holder: dict = {}
+        self.cut_current_seconds: float = 0.0
+        self.cut_total_seconds: float = 0.0
+        self.cut_output_path: str | None = None
 
     @property
     def dir(self) -> Path:
@@ -78,6 +88,11 @@ class Job:
         여러 번 구워도 이전 결과를 덮어쓰지 않도록 날짜/시간을 붙인다."""
         stamp = time.strftime("%Y%m%d_%H%M")
         return source_path.parent / f"{source_path.stem}_자막입힘_{stamp}.mp4"
+
+    def cut_output_path_for(self, source_path: Path) -> Path:
+        """무음 구간을 잘라낸 영상도 원본과 같은 디렉토리에, 날짜/시간을 붙여 저장한다."""
+        stamp = time.strftime("%Y%m%d_%H%M")
+        return source_path.parent / f"{source_path.stem}_무음컷_{stamp}.mp4"
 
     @property
     def meta_path(self) -> Path:

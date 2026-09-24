@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>한국어 자막 생성기</title>
-<link rel="stylesheet" href="style.css?v=36">
+<link rel="stylesheet" href="style.css?v=37">
 </head>
 <body>
   <header class="app-header">
@@ -95,6 +95,17 @@
             <span id="burn-progress-percent">0%</span>
           </div>
         </div>
+        <div class="style-row">
+          <button id="cut-btn" class="btn btn-primary" disabled>✂ 무음 구간 잘라내기 (위에서 고른 영상 사용)</button>
+          <button id="cut-cancel-btn" class="btn btn-warning" hidden>⏹ 잘라내기 중지</button>
+        </div>
+        <div id="cut-progress-wrap" class="progress-wrap" hidden>
+          <div class="progress-track"><div id="cut-progress-fill" class="progress-fill"></div></div>
+          <div class="progress-label">
+            <span id="cut-progress-message">대기 중</span>
+            <span id="cut-progress-percent">0%</span>
+          </div>
+        </div>
       </div>
     </div>
     <div class="subtitle-pane card">
@@ -122,6 +133,6 @@
     </div>
   </section>
 
-  <script src="app.js?v=36"></script>
+  <script src="app.js?v=37"></script>
 </body>
 </html>

@@ -48,6 +48,12 @@ const burnProgressWrap = document.getElementById("burn-progress-wrap");
 const burnProgressFill = document.getElementById("burn-progress-fill");
 const burnProgressMessage = document.getElementById("burn-progress-message");
 const burnProgressPercent = document.getElementById("burn-progress-percent");
+const cutBtn = document.getElementById("cut-btn");
+const cutCancelBtn = document.getElementById("cut-cancel-btn");
+const cutProgressWrap = document.getElementById("cut-progress-wrap");
+const cutProgressFill = document.getElementById("cut-progress-fill");
+const cutProgressMessage = document.getElementById("cut-progress-message");
+const cutProgressPercent = document.getElementById("cut-progress-percent");
 const syncSelectedCountEl = document.getElementById("sync-selected-count");
 const syncOffsetInput = document.getElementById("sync-offset-input");
 const syncBackwardBtn = document.getElementById("sync-backward-btn");
@@ -296,6 +302,17 @@ window.addEventListener("DOMContentLoaded", async () => {
       burnBtn.disabled = true;
       burnCancelBtn.hidden = false;
       pollBurnStatus();
+    }
+  }
+
+  // 컷편집도 마찬가지로, 이미 진행 중이면 진행률 폴링을 이어서 시작한다.
+  const cutRes = await fetch(`/api/videos/${jobId}/cut-silence/status`);
+  if (cutRes.ok) {
+    const cutData = await cutRes.json();
+    if (cutData.status === "processing") {
+      cutBtn.disabled = true;
+      cutCancelBtn.hidden = false;
+      pollCutStatus();
     }
   }
 });
@@ -924,6 +941,7 @@ burnPickBtn.addEventListener("click", async () => {
   burnSourcePathValue = data.path;
   burnSourcePath.textContent = burnSourcePathValue;
   burnBtn.disabled = false;
+  cutBtn.disabled = false;
 });
 
 burnBtn.addEventListener("click", async () => {
@@ -974,6 +992,64 @@ async function pollBurnStatus() {
     burnCancelBtn.hidden = true;
   } else {
     setTimeout(pollBurnStatus, 1000);
+  }
+}
+
+function setCutProgress(message, fraction, currentSeconds, duration) {
+  cutProgressWrap.hidden = false;
+  const percent = Math.round((fraction || 0) * 100);
+  const timeLabel = duration ? ` (${formatHMS(currentSeconds)} / ${formatHMS(duration)})` : "";
+  cutProgressMessage.textContent = message + timeLabel;
+  cutProgressPercent.textContent = `${percent}%`;
+  cutProgressFill.style.width = `${percent}%`;
+}
+
+cutBtn.addEventListener("click", async () => {
+  if (!jobId || !burnSourcePathValue) return;
+
+  cutBtn.disabled = true;
+  cutCancelBtn.hidden = false;
+  setCutProgress("잘라내기 요청 중...", 0);
+
+  const res = await fetch(`/api/videos/${jobId}/cut-silence`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_path: burnSourcePathValue }),
+  });
+  if (!res.ok) {
+    setCutProgress("실패: " + (await res.text()), 0);
+    cutBtn.disabled = false;
+    cutCancelBtn.hidden = true;
+    return;
+  }
+
+  pollCutStatus();
+});
+
+cutCancelBtn.addEventListener("click", async () => {
+  cutCancelBtn.disabled = true;
+  await fetch(`/api/videos/${jobId}/cut-silence/cancel`, { method: "POST" });
+  cutCancelBtn.disabled = false;
+});
+
+async function pollCutStatus() {
+  const res = await fetch(`/api/videos/${jobId}/cut-silence/status`);
+  const data = await res.json();
+  setCutProgress(data.message || data.status, data.progress, data.current_seconds, data.duration);
+
+  if (data.status === "done") {
+    cutBtn.disabled = false;
+    cutCancelBtn.hidden = true;
+    setCutProgress(`완료! 저장 위치: ${data.output_path}`, 1, data.duration, data.duration);
+  } else if (data.status === "cancelled") {
+    cutBtn.disabled = false;
+    cutCancelBtn.hidden = true;
+    setCutProgress("중지됨", 0);
+  } else if (data.status === "error") {
+    cutBtn.disabled = false;
+    cutCancelBtn.hidden = true;
+  } else {
+    setTimeout(pollCutStatus, 1000);
   }
 }
 

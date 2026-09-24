@@ -90,11 +90,14 @@ def get_video_resolution(video_path: Path) -> tuple[int, int] | None:
     return int(match.group(1)), int(match.group(2))
 
 
-def make_preview_proxy(video_path: Path, output_path: Path) -> None:
+def make_preview_proxy(video_path: Path, output_path: Path, proc_holder: dict | None = None) -> None:
     """미리보기 재생이 버벅이지 않도록 720p로 다운스케일한 프록시를 만든다.
     이미 720p 이하인 영상은 프록시가 필요 없으므로 아무것도 하지 않고 반환한다
     (호출 측은 output_path가 생기지 않으면 원본을 계속 서빙한다).
     굽기(burn_subtitles)는 이 프록시를 쓰지 않고 항상 원본 영상을 사용한다.
+
+    proc_holder를 넘기면 실행 중인 ffmpeg 프로세스를 그 안에 담아둬서,
+    호출 측(굽기 시작 등)이 하드웨어 인코더를 양보받기 위해 중간에 중지시킬 수 있다.
     """
     resolution = get_video_resolution(video_path)
     if resolution is None or resolution[1] <= 720:
@@ -110,10 +113,15 @@ def make_preview_proxy(video_path: Path, output_path: Path) -> None:
         "-movflags", "+faststart",
         str(tmp_path),
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.returncode != 0:
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    if proc_holder is not None:
+        proc_holder["proc"] = proc
+    _, stderr = proc.communicate()
+    if proc.returncode != 0:
         tmp_path.unlink(missing_ok=True)
-        raise RuntimeError(f"ffmpeg 미리보기 프록시 생성 실패: {result.stderr.strip()[-500:]}")
+        if proc_holder is not None and proc_holder.get("cancelled"):
+            return  # 굽기에 자원을 양보하기 위해 의도적으로 중지시킨 경우 -> 조용히 종료
+        raise RuntimeError(f"ffmpeg 미리보기 프록시 생성 실패: {stderr.strip()[-500:]}")
     tmp_path.replace(output_path)
 
 

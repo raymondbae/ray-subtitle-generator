@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import corrections
+import cutter
 import filler
 import jobs
 import preferences
@@ -192,6 +193,10 @@ class BurnIn(BaseModel):
     style: BurnStyle
 
 
+class CutIn(BaseModel):
+    source_path: str
+
+
 @app.get("/api/burn-style")
 def get_burn_style():
     """마지막으로 저장된 자막 굽기 스타일(글자 크기/색/위치 등)을 반환한다."""
@@ -253,12 +258,15 @@ def start_burn(job_id: str, body: BurnIn):
         raise HTTPException(400, "완성된 자막이 없습니다.")
     if job.burn_status == "processing":
         raise HTTPException(409, "이미 굽는 중입니다.")
+    if job.cut_status == "processing":
+        raise HTTPException(409, "무음 구간 잘라내기가 진행 중입니다. 끝난 뒤 다시 시도하세요.")
 
     source_path = Path(body.source_path).expanduser().resolve()
     if not source_path.is_file():
         raise HTTPException(400, f"영상을 찾을 수 없습니다: {source_path}")
 
     preferences.save_burn_style(body.style.model_dump())
+    _yield_proxy_encoder(job)
 
     thread = threading.Thread(
         target=_run_burn, args=(job, source_path, body.style.model_dump()), daemon=True
@@ -279,6 +287,96 @@ def get_burn_status(job_id: str):
         "current_seconds": job.burn_current_seconds,
         "duration": job.burn_duration,
         "output_path": job.burn_output_path,
+    }
+
+
+def _run_cut(job: jobs.Job, source_path: Path) -> None:
+    job.cut_proc_holder = {}
+    output_path = job.cut_output_path_for(source_path)
+    try:
+        job.cut_status = "processing"
+        job.cut_progress = 0.0
+        job.cut_message = "무음 구간 분석 중..."
+
+        segments = srt_to_segments(job.srt_path.read_text(encoding="utf-8"))
+        duration = transcribe.get_duration(source_path)
+        keep_ranges = cutter.compute_keep_ranges(segments, duration)
+        if not keep_ranges:
+            raise RuntimeError("남길 구간이 없습니다 (자막이 비어 있음).")
+
+        job.cut_message = "무음 구간 잘라내는 중..."
+        for fraction, current_seconds, total_seconds in cutter.cut_silence(
+            source_path, keep_ranges, output_path, proc_holder=job.cut_proc_holder
+        ):
+            job.cut_progress = fraction
+            job.cut_current_seconds = current_seconds
+            job.cut_total_seconds = total_seconds
+            job.cut_message = f"무음 구간 잘라내는 중... ({round(fraction * 100)}%)"
+
+        remapped = cutter.remap_segments(segments, keep_ranges)
+        output_path.with_suffix(".srt").write_text(segments_to_srt(remapped), encoding="utf-8")
+
+        job.cut_status = "done"
+        job.cut_progress = 1.0
+        job.cut_output_path = str(output_path)
+        job.cut_message = "완료"
+    except transcribe.BurnCancelled:
+        job.cut_status = "cancelled"
+        job.cut_message = "사용자가 중지했습니다."
+        output_path.unlink(missing_ok=True)
+    except Exception as e:  # noqa: BLE001
+        job.cut_status = "error"
+        job.cut_message = str(e)
+
+
+@app.post("/api/videos/{job_id}/cut-silence/cancel")
+def cancel_cut(job_id: str):
+    job = jobs.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "존재하지 않는 job_id 입니다.")
+    proc = job.cut_proc_holder.get("proc")
+    if job.cut_status != "processing" or proc is None:
+        raise HTTPException(400, "진행 중인 컷편집 작업이 없습니다.")
+    job.cut_proc_holder["cancelled"] = True
+    proc.terminate()
+    return {"status": "cancelling"}
+
+
+@app.post("/api/videos/{job_id}/cut-silence")
+def start_cut(job_id: str, body: CutIn):
+    job = jobs.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "존재하지 않는 job_id 입니다.")
+    if not job.srt_path.exists():
+        raise HTTPException(400, "완성된 자막이 없습니다.")
+    if job.cut_status == "processing":
+        raise HTTPException(409, "이미 잘라내는 중입니다.")
+    if job.burn_status == "processing":
+        raise HTTPException(409, "굽기가 진행 중입니다. 끝난 뒤 다시 시도하세요.")
+
+    source_path = Path(body.source_path).expanduser().resolve()
+    if not source_path.is_file():
+        raise HTTPException(400, f"영상을 찾을 수 없습니다: {source_path}")
+
+    _yield_proxy_encoder(job)
+
+    thread = threading.Thread(target=_run_cut, args=(job, source_path), daemon=True)
+    thread.start()
+    return {"status": "processing"}
+
+
+@app.get("/api/videos/{job_id}/cut-silence/status")
+def get_cut_status(job_id: str):
+    job = jobs.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "존재하지 않는 job_id 입니다.")
+    return {
+        "status": job.cut_status,
+        "message": job.cut_message,
+        "progress": job.cut_progress,
+        "current_seconds": job.cut_current_seconds,
+        "duration": job.cut_total_seconds,
+        "output_path": job.cut_output_path,
     }
 
 
@@ -340,8 +438,9 @@ def get_status(job_id: str):
 
 
 def _run_make_proxy(job: jobs.Job) -> None:
+    job.proxy_proc_holder = {}
     try:
-        transcribe.make_preview_proxy(job.video_path, job.proxy_path)
+        transcribe.make_preview_proxy(job.video_path, job.proxy_path, proc_holder=job.proxy_proc_holder)
     except Exception:  # noqa: BLE001
         pass  # 실패해도 원본으로 계속 서빙되므로 사용자에게 보여줄 필요 없다.
     finally:
@@ -349,10 +448,24 @@ def _run_make_proxy(job: jobs.Job) -> None:
 
 
 def _start_proxy_generation(job: jobs.Job) -> None:
-    if job.proxy_path.exists() or job.proxy_generating:
+    # 굽기 중에는 하드웨어 인코더(h264_videotoolbox)를 나눠 쓰면 둘 다 느려지므로 미루고,
+    # 굽기가 끝난 뒤 다음 재생 요청 때 자연스럽게 다시 시도되게 둔다.
+    if job.proxy_path.exists() or job.proxy_generating or job.burn_status == "processing":
         return
     job.proxy_generating = True
     threading.Thread(target=_run_make_proxy, args=(job,), daemon=True).start()
+
+
+def _yield_proxy_encoder(job: jobs.Job) -> None:
+    """굽기/컷편집처럼 무거운 인코딩이 시작될 때, 이미 돌고 있는 프록시 생성이 있으면
+    하드웨어 인코더를 양보하도록 중지시킨다."""
+    if not job.proxy_generating:
+        return
+    proc = job.proxy_proc_holder.get("proc")
+    if proc is None:
+        return
+    job.proxy_proc_holder["cancelled"] = True
+    proc.terminate()
 
 
 @app.get("/api/videos/{job_id}/video")
