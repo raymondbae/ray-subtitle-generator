@@ -287,6 +287,17 @@ window.addEventListener("DOMContentLoaded", async () => {
   workspace.hidden = false;
   await syncSubtitles();
   pushHistory();
+
+  // 굽기 도중 새로고침/재접속했을 수도 있으니, 이미 진행 중이면 진행률 폴링을 이어서 시작한다.
+  const burnRes = await fetch(`/api/videos/${jobId}/burn/status`);
+  if (burnRes.ok) {
+    const burnData = await burnRes.json();
+    if (burnData.status === "processing") {
+      burnBtn.disabled = true;
+      burnCancelBtn.hidden = false;
+      pollBurnStatus();
+    }
+  }
 });
 
 // --- 작업 히스토리 -----------------------------------------------------------
