@@ -1,6 +1,7 @@
 """ffmpeg 오디오 추출 + mlx-whisper(애플 실리콘 GPU) 음성 인식 + 자막 굽기."""
 from __future__ import annotations
 
+import array
 import re
 import subprocess
 from pathlib import Path
@@ -88,6 +89,30 @@ def get_video_resolution(video_path: Path) -> tuple[int, int] | None:
     if not match:
         return None
     return int(match.group(1)), int(match.group(2))
+
+
+def extract_waveform_peaks(video_path: Path, start: float, end: float, points: int) -> list[float]:
+    """타임라인 파형 표시용으로, [start, end] 구간의 오디오만 뽑아 points개의 피크(0~1)로 downsample한다.
+    -vn으로 비디오 스트림은 아예 건드리지 않아, 4K/HEVC 원본이어도 빠르게 처리된다."""
+    if end <= start or points <= 0:
+        return []
+    cmd = [
+        "ffmpeg", "-v", "error",
+        "-ss", str(start), "-i", str(video_path), "-t", str(end - start),
+        "-vn", "-ac", "1", "-ar", "3000", "-f", "s16le", "pipe:1",
+    ]
+    result = subprocess.run(cmd, capture_output=True)
+    samples = array.array("h")
+    samples.frombytes(result.stdout[: len(result.stdout) - len(result.stdout) % 2])
+    if not samples:
+        return [0.0] * points
+
+    bucket_size = max(1, len(samples) // points)
+    peaks = []
+    for i in range(points):
+        chunk = samples[i * bucket_size : (i + 1) * bucket_size]
+        peaks.append((max(abs(s) for s in chunk) / 32768) if chunk else 0.0)
+    return peaks
 
 
 def make_preview_proxy(video_path: Path, output_path: Path, proc_holder: dict | None = None):

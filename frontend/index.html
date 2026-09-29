@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>한국어 자막 생성기</title>
-<link rel="stylesheet" href="style.css?v=40">
+<link rel="stylesheet" href="style.css?v=41">
 </head>
 <body>
   <header class="app-header">
@@ -49,6 +49,24 @@
         <div id="caption-overlay" class="caption-overlay"></div>
       </div>
       <div id="proxy-status-badge" class="proxy-status-badge" hidden>🎞 미리보기용 저용량 변환 중... (끝나면 자동으로 끊김 없이 재생됩니다)</div>
+
+      <div id="timeline-panel" class="timeline-panel" hidden>
+        <div class="timeline-toolbar">
+          <span class="timeline-hint">자막 블록을 드래그하면 그 줄만 이동합니다 (클릭하면 그 위치로 재생)</span>
+          <button id="tl-zoom-out" class="btn btn-secondary" title="축소">－</button>
+          <input type="range" id="tl-zoom-slider" min="5" max="200" value="40">
+          <button id="tl-zoom-in" class="btn btn-secondary" title="확대">＋</button>
+        </div>
+        <div id="timeline-scroll" class="timeline-scroll">
+          <canvas id="timeline-waveform" class="timeline-waveform"></canvas>
+          <div id="timeline-content" class="timeline-content">
+            <div id="timeline-ruler" class="timeline-ruler"></div>
+            <div id="timeline-blocks" class="timeline-blocks"></div>
+            <div id="timeline-playhead" class="timeline-playhead"></div>
+          </div>
+        </div>
+      </div>
+
       <div class="toolbar">
         <div class="speed-group">
           <button class="btn btn-secondary speed-btn active" data-speed="1">1x</button>
@@ -135,6 +153,6 @@
     </div>
   </section>
 
-  <script src="app.js?v=40"></script>
+  <script src="app.js?v=41"></script>
 </body>
 </html>

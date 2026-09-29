@@ -64,12 +64,28 @@ const syncSelectToEndBtn = document.getElementById("sync-select-to-end-btn");
 const syncClearBtn = document.getElementById("sync-clear-btn");
 const currentTimeDisplay = document.getElementById("current-time-display");
 const proxyStatusBadge = document.getElementById("proxy-status-badge");
+const timelinePanel = document.getElementById("timeline-panel");
+const timelineScroll = document.getElementById("timeline-scroll");
+const timelineContent = document.getElementById("timeline-content");
+const timelineRuler = document.getElementById("timeline-ruler");
+const timelineBlocks = document.getElementById("timeline-blocks");
+const timelinePlayhead = document.getElementById("timeline-playhead");
+const timelineWaveform = document.getElementById("timeline-waveform");
+const tlZoomSlider = document.getElementById("tl-zoom-slider");
+const tlZoomOutBtn = document.getElementById("tl-zoom-out");
+const tlZoomInBtn = document.getElementById("tl-zoom-in");
 
 let jobId = null;
 let segments = [];
 let pickedPath = null;
 let changedIndices = [];
 const selectedIndices = new Set();
+
+// --- 타임라인 -----------------------------------------------------------
+let tlPxPerSecond = Number(tlZoomSlider.value);
+let tlVideoDuration = 0;
+let tlWaveformFetchTimer = null;
+let tlDragState = null; // 드래그 중일 때만 { index, startX, startLeftPx } 형태로 채워짐
 
 // --- 실행 취소 / 다시 실행 -------------------------------------------------
 let history = [];
@@ -283,6 +299,7 @@ function renderAllSegments() {
   segments.forEach((seg, i) => appendSegRow(seg, i));
   updateFlagCount();
   updateSyncSelectedCount();
+  renderTimelineBlocks();
 }
 
 // URL에 ?job=<id> 가 있으면 새로 생성하지 않고 기존 결과를 바로 불러온다.
@@ -848,7 +865,10 @@ player.addEventListener("timeupdate", () => {
   });
   captionOverlay.textContent = activeSeg ? activeSeg.text : "";
   currentTimeDisplay.textContent = `현재 ${formatTime(player.currentTime)} (${player.currentTime.toFixed(2)}s)`;
+  updateTimelinePlayhead();
 });
+
+player.addEventListener("loadedmetadata", initTimeline);
 
 // 재생 중 자연스러운 흐름이 아니라, 사용자가 영상 위치를 직접 옮겼을 때만 그 자막으로 스크롤한다.
 player.addEventListener("seeked", () => {
@@ -946,6 +966,169 @@ function formatHMS(sec) {
   const pad = (n) => String(n).padStart(2, "0");
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
+
+// --- 캡컷 스타일 타임라인 -----------------------------------------------------
+function initTimeline() {
+  tlVideoDuration = player.duration || 0;
+  if (!tlVideoDuration) return;
+  timelinePanel.hidden = false;
+  timelineContent.style.width = `${tlVideoDuration * tlPxPerSecond}px`;
+  renderTimelineRuler();
+  renderTimelineBlocks();
+  updateTimelinePlayhead();
+  requestWaveformRedraw();
+}
+
+function niceTickInterval(pxPerSecond) {
+  const candidates = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
+  const targetPx = 80;
+  return candidates.find((sec) => sec * pxPerSecond >= targetPx) || candidates[candidates.length - 1];
+}
+
+function renderTimelineRuler() {
+  timelineRuler.innerHTML = "";
+  if (!tlVideoDuration) return;
+  const interval = niceTickInterval(tlPxPerSecond);
+  for (let t = 0; t <= tlVideoDuration; t += interval) {
+    const tick = document.createElement("div");
+    tick.className = "timeline-tick";
+    tick.style.left = `${t * tlPxPerSecond}px`;
+    tick.textContent = formatHMS(t);
+    timelineRuler.appendChild(tick);
+  }
+}
+
+function renderTimelineBlocks() {
+  if (!tlVideoDuration) return;
+  timelineBlocks.innerHTML = "";
+  segments.forEach((seg, index) => {
+    const block = document.createElement("div");
+    block.className = "timeline-block";
+    if (seg.flag) block.classList.add("flagged");
+    block.style.left = `${seg.start * tlPxPerSecond}px`;
+    block.style.width = `${Math.max(2, (seg.end - seg.start) * tlPxPerSecond)}px`;
+    block.textContent = seg.text;
+    block.title = seg.text;
+    block.addEventListener("pointerdown", (e) => startTimelineDrag(e, index, block));
+    timelineBlocks.appendChild(block);
+  });
+}
+
+function startTimelineDrag(e, index, block) {
+  e.preventDefault();
+  const seg = segments[index];
+  tlDragState = { index, startX: e.clientX, startLeftPx: seg.start * tlPxPerSecond, moved: false };
+  block.setPointerCapture(e.pointerId);
+
+  const onMove = (moveEvent) => {
+    if (!tlDragState) return;
+    const deltaPx = moveEvent.clientX - tlDragState.startX;
+    if (!tlDragState.moved && Math.abs(deltaPx) > 4) {
+      tlDragState.moved = true;
+      block.classList.add("dragging");
+    }
+    if (tlDragState.moved) {
+      block.style.transform = `translateX(${deltaPx}px)`;
+    }
+  };
+
+  const onUp = (upEvent) => {
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    block.releasePointerCapture(upEvent.pointerId);
+    block.classList.remove("dragging");
+    block.style.transform = "";
+
+    if (tlDragState && tlDragState.moved) {
+      const deltaPx = upEvent.clientX - tlDragState.startX;
+      const deltaSeconds = deltaPx / tlPxPerSecond;
+      shiftIndices([index], deltaSeconds);
+    } else {
+      // 드래그가 아니라 클릭 -> 그 위치로 재생 (▷ 버튼과 동일한 동작)
+      player.currentTime = segments[index].start;
+      player.play();
+    }
+    tlDragState = null;
+  };
+
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
+}
+
+// 눈금자/빈 공간 클릭 시 그 시각으로 이동 (탐색바처럼 동작)
+timelineContent.addEventListener("click", (e) => {
+  if (e.target.closest(".timeline-block")) return;
+  const rect = timelineContent.getBoundingClientRect();
+  const clickedTime = (e.clientX - rect.left) / tlPxPerSecond;
+  player.currentTime = Math.max(0, Math.min(tlVideoDuration, clickedTime));
+});
+
+function updateTimelinePlayhead() {
+  if (!tlVideoDuration) return;
+  const leftPx = player.currentTime * tlPxPerSecond;
+  timelinePlayhead.style.left = `${leftPx}px`;
+
+  if (!player.paused && !tlDragState) {
+    const viewStart = timelineScroll.scrollLeft;
+    const viewEnd = viewStart + timelineScroll.clientWidth;
+    if (leftPx < viewStart || leftPx > viewEnd) {
+      timelineScroll.scrollLeft = leftPx - timelineScroll.clientWidth / 2;
+    }
+  }
+}
+
+async function requestWaveformRedraw() {
+  clearTimeout(tlWaveformFetchTimer);
+  tlWaveformFetchTimer = setTimeout(async () => {
+    if (!jobId || !tlVideoDuration) return;
+    const width = timelineScroll.clientWidth || 1;
+    const start = Math.max(0, timelineScroll.scrollLeft / tlPxPerSecond);
+    const end = Math.min(tlVideoDuration, start + width / tlPxPerSecond);
+    const points = Math.max(1, Math.round(width));
+
+    timelineWaveform.width = width;
+    timelineWaveform.height = 40;
+
+    const res = await fetch(`/api/videos/${jobId}/waveform?start=${start}&end=${end}&points=${points}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    drawWaveform(data.peaks || []);
+  }, 150);
+}
+
+function drawWaveform(peaks) {
+  const ctx = timelineWaveform.getContext("2d");
+  const w = timelineWaveform.width;
+  const h = timelineWaveform.height;
+  ctx.clearRect(0, 0, w, h);
+  if (peaks.length === 0) return;
+  ctx.fillStyle = "rgba(79, 70, 229, 0.35)";
+  const mid = h / 2;
+  peaks.forEach((p, i) => {
+    const barHeight = Math.max(1, p * mid);
+    ctx.fillRect(i, mid - barHeight, 1, barHeight * 2);
+  });
+}
+
+timelineScroll.addEventListener("scroll", requestWaveformRedraw);
+
+function setTimelineZoom(px) {
+  const centerTime = (timelineScroll.scrollLeft + timelineScroll.clientWidth / 2) / tlPxPerSecond;
+  tlPxPerSecond = px;
+  tlZoomSlider.value = px;
+  if (tlVideoDuration) {
+    timelineContent.style.width = `${tlVideoDuration * tlPxPerSecond}px`;
+    renderTimelineRuler();
+    renderTimelineBlocks();
+    updateTimelinePlayhead();
+    timelineScroll.scrollLeft = centerTime * tlPxPerSecond - timelineScroll.clientWidth / 2;
+  }
+  requestWaveformRedraw();
+}
+
+tlZoomSlider.addEventListener("input", () => setTimelineZoom(Number(tlZoomSlider.value)));
+tlZoomOutBtn.addEventListener("click", () => setTimelineZoom(Math.max(5, tlPxPerSecond - 10)));
+tlZoomInBtn.addEventListener("click", () => setTimelineZoom(Math.min(200, tlPxPerSecond + 10)));
 
 function setBurnProgress(message, fraction, currentSeconds, duration) {
   burnProgressWrap.hidden = false;

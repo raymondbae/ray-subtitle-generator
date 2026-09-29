@@ -500,6 +500,19 @@ def get_video(job_id: str):
     return FileResponse(job.video_path, media_type=_guess_media_type(job.video_path))
 
 
+@app.get("/api/videos/{job_id}/waveform")
+def get_waveform(job_id: str, start: float = 0.0, end: float = 0.0, points: int = 500):
+    job = jobs.get_job(job_id)
+    if job is None or not job.video_path.exists():
+        raise HTTPException(404, "영상을 찾을 수 없습니다.")
+    points = max(1, min(points, 4000))
+    try:
+        peaks = transcribe.extract_waveform_peaks(job.video_path, start, end, points)
+    except Exception:  # noqa: BLE001
+        peaks = []
+    return {"peaks": peaks}
+
+
 @app.get("/api/videos/{job_id}/subtitles")
 def get_subtitles(job_id: str):
     job = jobs.get_job(job_id)
