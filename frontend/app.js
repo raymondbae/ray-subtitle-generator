@@ -84,6 +84,7 @@ let segments = [];
 let pickedPath = null;
 let changedIndices = [];
 let textAutoSaveTimer = null; // blur가 늦거나(타임라인 드래그 시작 등으로 막힘) 안 일어나도 편집 내용이 유실되지 않도록 하는 안전망
+let lastSavedPosition = -Infinity; // 재생 위치 저장 스로틀용
 const selectedIndices = new Set();
 
 // --- 타임라인 -----------------------------------------------------------
@@ -424,6 +425,30 @@ avToggleBtn.addEventListener("click", () => {
   updateAvToggleLabel();
 });
 
+// 재생 위치를 브라우저에 저장해뒀다가, 새로고침해도 그 위치부터 이어서 볼 수 있게 한다.
+function savePlaybackPosition() {
+  if (!jobId) return;
+  try {
+    localStorage.setItem(`playpos:${jobId}`, String(player.currentTime));
+  } catch {
+    // 프라이빗 브라우징 등으로 localStorage를 못 쓰면 그냥 무시 (이어보기는 안 되지만 재생 자체엔 지장 없음)
+  }
+}
+
+function restorePlaybackPosition() {
+  if (!jobId) return;
+  try {
+    const saved = localStorage.getItem(`playpos:${jobId}`);
+    if (saved === null) return;
+    const t = Number(saved);
+    if (Number.isFinite(t) && t > 0 && (!player.duration || t < player.duration)) {
+      player.currentTime = t;
+    }
+  } catch {
+    // 무시
+  }
+}
+
 async function initPlayerSource() {
   // 이 FastAPI 버전은 HEAD를 GET 라우트에 자동으로 매칭해주지 않으므로, 대신 1바이트만
   // 요청하는 Range GET으로 오디오 추출본이 있는지 가볍게 확인한다 (영상/음성 토글 버튼 노출 여부에도 사용).
@@ -433,6 +458,7 @@ async function initPlayerSource() {
 
   const res = await fetch(`/api/videos/${jobId}/status`);
   const data = await res.json();
+  player.addEventListener("loadedmetadata", restorePlaybackPosition, { once: true });
   if (data.proxy_ready || !audioPreviewAvailable) {
     player.src = `/api/videos/${jobId}/video`;
     usingAudioPreview = false;
@@ -999,8 +1025,15 @@ player.addEventListener("timeupdate", () => {
     const next = segments.find((seg) => seg.start > player.currentTime);
     if (next) player.currentTime = next.start;
   }
+
+  // 매번 쓰면 낭비니 2초에 한 번 정도만 재생 위치를 저장한다.
+  if (Math.abs(player.currentTime - lastSavedPosition) > 2) {
+    lastSavedPosition = player.currentTime;
+    savePlaybackPosition();
+  }
 });
 
+player.addEventListener("pause", savePlaybackPosition);
 player.addEventListener("loadedmetadata", initTimeline);
 
 // 재생 중 자연스러운 흐름이 아니라, 사용자가 영상 위치를 직접 옮겼을 때만 그 자막으로 스크롤한다.
