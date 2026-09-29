@@ -351,6 +351,12 @@ body {
   color: var(--danger);
 }
 
+.timeline-block.overlapping {
+  border-style: dashed;
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 1px #f59e0b;
+}
+
 .timeline-block-resize {
   position: absolute;
   top: 0;

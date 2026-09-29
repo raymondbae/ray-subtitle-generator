@@ -998,17 +998,59 @@ function renderTimelineRuler() {
   }
 }
 
+// 시간순으로 겹치는 자막이 있으면(자막 하나가 시작하기 전에 다른 자막이 안 끝났으면)
+// 서로 겹치는 인덱스들을 모아 반환한다. start 기준 정렬돼 있다고 가정하고, 겹치지
+// 않는 지점을 만나면 더 볼 필요가 없어 바로 break한다.
+function computeOverlappingIndices() {
+  const overlapping = new Set();
+  for (let i = 0; i < segments.length; i++) {
+    for (let j = i + 1; j < segments.length; j++) {
+      if (segments[j].start >= segments[i].end) break;
+      overlapping.add(i);
+      overlapping.add(j);
+    }
+  }
+  return overlapping;
+}
+
+// 겹치는 자막끼리는 같은 줄에 그리면 한쪽이 가려지므로, 겹치지 않을 때까지
+// 아래로 새 레인(줄)을 만들어 배정한다 (간단한 구간 스케줄링 그리디).
+function assignTimelineLanes() {
+  const laneEnds = [];
+  return segments.map((seg) => {
+    let lane = laneEnds.findIndex((end) => end <= seg.start);
+    if (lane === -1) {
+      lane = laneEnds.length;
+      laneEnds.push(seg.end);
+    } else {
+      laneEnds[lane] = seg.end;
+    }
+    return lane;
+  });
+}
+
+const TL_LANE_HEIGHT = 40; // 블록 높이(36px) + 위아래 여백
+
 function renderTimelineBlocks() {
   if (!tlVideoDuration) return;
   timelineBlocks.innerHTML = "";
+  const overlapping = computeOverlappingIndices();
+  const lanes = assignTimelineLanes();
+  const laneCount = Math.max(1, ...lanes.map((l) => l + 1));
+  timelineBlocks.style.height = `${laneCount * TL_LANE_HEIGHT + 4}px`;
+  timelineContent.style.height = `${40 + laneCount * TL_LANE_HEIGHT + 4}px`;
+  timelineScroll.style.height = `${40 + laneCount * TL_LANE_HEIGHT + 4}px`;
+
   segments.forEach((seg, index) => {
     const block = document.createElement("div");
     block.className = "timeline-block";
     if (seg.flag) block.classList.add("flagged");
+    if (overlapping.has(index)) block.classList.add("overlapping");
     block.style.left = `${seg.start * tlPxPerSecond}px`;
+    block.style.top = `${4 + lanes[index] * TL_LANE_HEIGHT}px`;
     block.style.width = `${Math.max(2, (seg.end - seg.start) * tlPxPerSecond)}px`;
     block.textContent = seg.text;
-    block.title = seg.text;
+    block.title = overlapping.has(index) ? `${seg.text}\n⚠ 다른 자막과 시간이 겹칩니다` : seg.text;
     block.addEventListener("pointerdown", (e) => startTimelineDrag(e, index, block));
 
     const resizeHandle = document.createElement("div");
