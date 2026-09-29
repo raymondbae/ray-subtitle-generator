@@ -859,18 +859,41 @@ function appendSegRow(seg, index) {
   text.contentEditable = "true";
   text.textContent = seg.text;
   const originalFlaggedText = seg.text;
-  text.addEventListener("input", () => {
-    segments[index].text = text.textContent;
-    updateTimelineBlockText(index, text.textContent);
-    // 플래그된 줄을 실제로 고치면, 그 순간 확인 완료로 보고 표시를 지운다.
-    if (seg.flag && text.textContent !== originalFlaggedText) {
+  const originalFlagValue = seg.flag; // 스페이스만 넣었다 지우는 식으로 결국 원문과 똑같아지면 복원하기 위해 보관
+  let flagClearedByEdit = false;
+
+  // "달라졌었나"가 아니라 "지금도 여전히 다른가"를 매번 다시 확인한다 - 타이핑 도중
+  // 우연히(혹은 테스트로) 원래 텍스트로 되돌아오면 확인 필요 표시도 다시 살아난다.
+  function reconcileFlagState() {
+    if (!originalFlagValue) return;
+    const differs = text.textContent !== originalFlaggedText;
+    if (differs && !flagClearedByEdit) {
+      flagClearedByEdit = true;
       seg.flag = null;
       row.classList.remove("flagged");
       row.title = "";
       flagIcon.hidden = true;
-      updateFlagCount();
       clearTimelineBlockFlag(index);
+      updateFlagCount();
+    } else if (!differs && flagClearedByEdit) {
+      flagClearedByEdit = false;
+      seg.flag = originalFlagValue;
+      row.classList.add("flagged");
+      row.title = originalFlagValue;
+      flagIcon.hidden = false;
+      const entry = timelineBlockLabels[index];
+      if (entry) {
+        entry.block.classList.add("flagged");
+        entry.block.title = `${originalFlaggedText}\n⚠ ${originalFlagValue}`;
+      }
+      updateFlagCount();
     }
+  }
+
+  text.addEventListener("input", () => {
+    segments[index].text = text.textContent;
+    updateTimelineBlockText(index, text.textContent);
+    reconcileFlagState();
     // blur가 늦거나 안 일어나도(예: 타임라인 드래그 시작 시 e.preventDefault로 블러가
     // 막힘) 편집 내용이 유실되지 않도록, 타이핑이 잠시 멈추면 자동으로도 저장한다.
     clearTimeout(textAutoSaveTimer);
