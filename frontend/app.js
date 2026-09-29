@@ -100,6 +100,14 @@ function updateTimelineBlockText(index, newText) {
   entry.block.title = entry.overlapping ? `${newText}\n⚠ 다른 자막과 시간이 겹칩니다` : newText;
 }
 
+// 확인 필요(flagged) 표시를 실제로 고치면, 리스트 쪽뿐 아니라 타임라인 블록의
+// 빨간 테두리도 같이 지워준다.
+function clearTimelineBlockFlag(index) {
+  const entry = timelineBlockLabels[index];
+  if (!entry) return;
+  entry.block.classList.remove("flagged");
+}
+
 // --- 실행 취소 / 다시 실행 -------------------------------------------------
 let history = [];
 let historyIndex = -1;
@@ -835,6 +843,7 @@ function appendSegRow(seg, index) {
       row.title = "";
       flagIcon.hidden = true;
       updateFlagCount();
+      clearTimelineBlockFlag(index);
     }
     // blur가 늦거나 안 일어나도(예: 타임라인 드래그 시작 시 e.preventDefault로 블러가
     // 막힘) 편집 내용이 유실되지 않도록, 타이핑이 잠시 멈추면 자동으로도 저장한다.
