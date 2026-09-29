@@ -1010,8 +1010,51 @@ function renderTimelineBlocks() {
     block.textContent = seg.text;
     block.title = seg.text;
     block.addEventListener("pointerdown", (e) => startTimelineDrag(e, index, block));
+
+    const resizeHandle = document.createElement("div");
+    resizeHandle.className = "timeline-block-resize";
+    resizeHandle.addEventListener("pointerdown", (e) => {
+      e.stopPropagation();
+      startTimelineResize(e, index, block);
+    });
+    block.appendChild(resizeHandle);
+
     timelineBlocks.appendChild(block);
   });
+}
+
+// 자막 블록 오른쪽(뒤쪽) 끝의 손잡이를 드래그해서 길이(끝 시각)만 조절한다.
+function startTimelineResize(e, index, block) {
+  e.preventDefault();
+  const seg = segments[index];
+  const startX = e.clientX;
+  const startWidthPx = (seg.end - seg.start) * tlPxPerSecond;
+  block.setPointerCapture(e.pointerId);
+  block.classList.add("dragging");
+
+  const onMove = (moveEvent) => {
+    const deltaPx = moveEvent.clientX - startX;
+    const newWidthPx = Math.max(tlPxPerSecond * 0.1, startWidthPx + deltaPx);
+    block.style.width = `${newWidthPx}px`;
+  };
+
+  const onUp = (upEvent) => {
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    block.releasePointerCapture(upEvent.pointerId);
+    block.classList.remove("dragging");
+
+    const deltaPx = upEvent.clientX - startX;
+    const deltaSeconds = deltaPx / tlPxPerSecond;
+    const newEnd = Math.max(seg.start + 0.1, Math.min(tlVideoDuration, seg.end + deltaSeconds));
+    segments[index].end = newEnd;
+    renderAllSegments();
+    pushHistory();
+    saveSegments("자동 저장됨");
+  };
+
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
 }
 
 function startTimelineDrag(e, index, block) {

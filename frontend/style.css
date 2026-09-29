@@ -351,6 +351,19 @@ body {
   color: var(--danger);
 }
 
+.timeline-block-resize {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: ew-resize;
+}
+
+.timeline-block-resize:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+
 .timeline-block.dragging {
   cursor: grabbing;
   z-index: 2;
