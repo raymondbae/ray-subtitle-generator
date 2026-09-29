@@ -501,6 +501,29 @@ def get_video(job_id: str):
     return FileResponse(job.video_path, media_type=_guess_media_type(job.video_path))
 
 
+@app.get("/api/videos/{job_id}/audio-preview")
+def get_audio_preview(job_id: str):
+    """자막 생성 중 뽑아둔 오디오(audio.wav)를 그대로 서빙한다. 4K/HEVC 등 무거운
+    원본의 저해상도 프록시가 아직 안 만들어졌을 때, 영상 없이 오디오+타임라인만으로도
+    자막 싱크를 훨씬 빠르게(트랜스코딩 대기 없이) 맞출 수 있게 해준다."""
+    job = jobs.get_job(job_id)
+    if job is None or not job.audio_path.exists():
+        raise HTTPException(404, "추출된 오디오가 없습니다.")
+    return FileResponse(job.audio_path, media_type="audio/wav")
+
+
+@app.post("/api/videos/{job_id}/ensure-proxy")
+def ensure_proxy(job_id: str):
+    """오디오 미리보기만 재생 중이라 /video 요청이 아직 없을 수 있으므로,
+    프록시 생성을 명시적으로 시작(이미 하고 있거나 끝났으면 아무 일도 안 함)시킨다."""
+    job = jobs.get_job(job_id)
+    if job is None:
+        raise HTTPException(404, "존재하지 않는 job_id 입니다.")
+    if job.status == "done":
+        _start_proxy_generation(job)
+    return {"status": "ok"}
+
+
 @app.get("/api/videos/{job_id}/waveform")
 def get_waveform(job_id: str, start: float = 0.0, end: float = 0.0, points: int = 500):
     job = jobs.get_job(job_id)

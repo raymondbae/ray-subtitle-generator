@@ -65,6 +65,7 @@ const syncSelectToEndBtn = document.getElementById("sync-select-to-end-btn");
 const syncClearBtn = document.getElementById("sync-clear-btn");
 const currentTimeDisplay = document.getElementById("current-time-display");
 const proxyStatusBadge = document.getElementById("proxy-status-badge");
+const audioPreviewBadge = document.getElementById("audio-preview-badge");
 const timelinePanel = document.getElementById("timeline-panel");
 const timelineScroll = document.getElementById("timeline-scroll");
 const timelineContent = document.getElementById("timeline-content");
@@ -308,7 +309,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   const existingJob = new URLSearchParams(location.search).get("job");
   if (!existingJob) return;
   jobId = existingJob;
-  player.src = `/api/videos/${jobId}/video`;
+  await initPlayerSource();
   downloadLink.href = `/api/videos/${jobId}/subtitles/download`;
   workspace.hidden = false;
   await syncSubtitles();
@@ -339,6 +340,43 @@ window.addEventListener("DOMContentLoaded", async () => {
   pollProxyStatus();
 });
 
+// 무거운 원본을 억지로 스트리밍하지 않도록, 저용량 프록시가 아직 없으면 이미 뽑아둔
+// 오디오(audio.wav)로 먼저 재생을 시작한다 - 자막 싱크는 화면 없이 오디오+타임라인
+// 만으로도 충분하고, 4시간짜리 원본처럼 프록시 변환이 오래 걸리는 경우 특히 유용하다.
+function isUsingAudioPreview() {
+  return player.currentSrc.includes("/audio-preview");
+}
+
+async function initPlayerSource() {
+  const res = await fetch(`/api/videos/${jobId}/status`);
+  const data = await res.json();
+  if (data.proxy_ready) {
+    player.src = `/api/videos/${jobId}/video`;
+    return;
+  }
+  // 이 FastAPI 버전은 HEAD를 GET 라우트에 자동으로 매칭해주지 않으므로, 대신 1바이트만
+  // 요청하는 Range GET으로 존재 여부만 가볍게 확인한다.
+  const audioRes = await fetch(`/api/videos/${jobId}/audio-preview`, { headers: { Range: "bytes=0-0" } });
+  if (audioRes.ok) {
+    player.src = `/api/videos/${jobId}/audio-preview`;
+    audioPreviewBadge.hidden = false;
+    fetch(`/api/videos/${jobId}/ensure-proxy`, { method: "POST" }); // /video를 안 거치므로 프록시 생성을 직접 깨워준다
+  } else {
+    player.src = `/api/videos/${jobId}/video`;
+  }
+}
+
+// 오디오로 먼저 듣고 있다가 프록시가 완성되면, 재생 위치/재생 상태를 유지한 채로 영상으로 갈아탄다.
+function switchToVideoSource() {
+  const wasPlaying = !player.paused;
+  const resumeAt = player.currentTime;
+  player.addEventListener("loadedmetadata", () => {
+    player.currentTime = resumeAt;
+    if (wasPlaying) player.play();
+  }, { once: true });
+  player.src = `/api/videos/${jobId}/video`;
+}
+
 // 원본 대신 재생할 저용량 미리보기 프록시가 아직 만들어지는 중이면, 그동안 원본을
 // 그대로 스트리밍하느라 미리보기가 끊길 수 있어 사용자에게 그 사실을 알려준다.
 async function pollProxyStatus() {
@@ -353,6 +391,10 @@ async function pollProxyStatus() {
     setTimeout(pollProxyStatus, 2000);
   } else {
     proxyStatusBadge.hidden = true;
+    if (data.proxy_ready && isUsingAudioPreview()) {
+      audioPreviewBadge.hidden = true;
+      switchToVideoSource();
+    }
   }
 }
 
@@ -634,6 +676,8 @@ async function finalizeSubtitles() {
   if (flagCount > 0) {
     alert(`자막 생성이 끝났습니다.\n⚠ 확인이 필요한 구간이 ${flagCount}곳 있어요 ("다음 확인 필요 구간" 버튼으로 하나씩 훑어보세요).`);
   }
+  // 지금까지는 전사 중이던 원본을 그대로 틀고 있었으니, 프록시가 아직이면 오디오로 전환한다.
+  await initPlayerSource();
   pollProxyStatus();
 }
 
