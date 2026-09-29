@@ -31,6 +31,7 @@ const replaceStatus = document.getElementById("replace-status");
 const historyBtn = document.getElementById("history-btn");
 const historyPanel = document.getElementById("history-panel");
 const historyList = document.getElementById("history-list");
+const styleFont = document.getElementById("style-font");
 const styleSize = document.getElementById("style-size");
 const styleSizeVal = document.getElementById("style-size-val");
 const styleColor = document.getElementById("style-color");
@@ -892,6 +893,7 @@ function getCaptionScale() {
 
 function applyCaptionStyle() {
   const scale = getCaptionScale();
+  captionOverlay.style.fontFamily = `"${styleFont.value}"`;
   captionOverlay.style.setProperty("--cap-size", styleSize.value * scale);
   captionOverlay.style.setProperty("--cap-color", styleColor.value);
   captionOverlay.style.setProperty("--cap-outline", styleOutlineColor.value);
@@ -909,6 +911,7 @@ function currentStyleForSave() {
   const alignment = stylePosition.value === "top" ? 8 : stylePosition.value === "middle" ? 5 : 2;
   return {
     font_size: Number(styleSize.value),
+    font_name: styleFont.value,
     primary_colour: hexToAssColor(styleColor.value),
     outline_colour: hexToAssColor(styleOutlineColor.value),
     alignment,
@@ -927,7 +930,7 @@ function saveBurnStylePrefs() {
 
 new ResizeObserver(applyCaptionStyle).observe(player);
 
-[styleSize, styleColor, styleOutlineColor, stylePosition, styleMargin, styleWidth].forEach((el) => {
+[styleFont, styleSize, styleColor, styleOutlineColor, stylePosition, styleMargin, styleWidth].forEach((el) => {
   el.addEventListener("input", applyCaptionStyle);
   el.addEventListener("change", saveBurnStylePrefs);
 });
@@ -951,6 +954,7 @@ async function loadBurnStylePrefs() {
     const res = await fetch("/api/burn-style");
     if (!res.ok) return;
     const style = await res.json();
+    styleFont.value = style.font_name || "Apple SD Gothic Neo";
     styleSize.value = style.font_size;
     styleColor.value = assColorToHex(style.primary_colour);
     styleOutlineColor.value = assColorToHex(style.outline_colour);

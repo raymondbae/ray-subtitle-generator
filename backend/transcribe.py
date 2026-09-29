@@ -182,7 +182,7 @@ def burn_subtitles(video_path: Path, srt_path: Path, output_path: Path, style: d
     margin_lr = round(1280 * (1 - width_percent / 100) / 2)
 
     force_style = (
-        f"FontName=Apple SD Gothic Neo,"
+        f"FontName={style.get('font_name', 'Apple SD Gothic Neo')},"
         f"FontSize={style.get('font_size', 32)},"
         f"PrimaryColour={style.get('primary_colour', '&H00FFFFFF')},"
         f"OutlineColour={style.get('outline_colour', '&H00000000')},"

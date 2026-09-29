@@ -181,6 +181,7 @@ def download_extracted_audio(job_id: str):
 
 class BurnStyle(BaseModel):
     font_size: int = 32
+    font_name: str = "Apple SD Gothic Neo"
     primary_colour: str = "&H00FFFFFF"
     outline_colour: str = "&H00000000"
     alignment: int = 2

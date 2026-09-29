@@ -8,6 +8,7 @@ PREFS_PATH = Path(__file__).resolve().parent.parent / "data" / "preferences.json
 
 DEFAULT_BURN_STYLE = {
     "font_size": 32,
+    "font_name": "Apple SD Gothic Neo",
     "primary_colour": "&H00FFFFFF",
     "outline_colour": "&H00000000",
     "alignment": 2,
