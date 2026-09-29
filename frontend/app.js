@@ -329,8 +329,10 @@ async function pollProxyStatus() {
   if (!res.ok) return;
   const data = await res.json();
   if (data.proxy_generating) {
+    const percent = Math.round((data.proxy_progress || 0) * 100);
+    proxyStatusBadge.textContent = `🎞 미리보기용 저용량 변환 중... (${percent}%, 끝나면 자동으로 끊김 없이 재생됩니다)`;
     proxyStatusBadge.hidden = false;
-    setTimeout(pollProxyStatus, 3000);
+    setTimeout(pollProxyStatus, 2000);
   } else {
     proxyStatusBadge.hidden = true;
   }

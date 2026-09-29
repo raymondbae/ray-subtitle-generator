@@ -45,6 +45,7 @@ class Job:
 
         # 미리보기용 저해상도 프록시 생성 상태 (메모리에만 보관, 재시작 시 리셋되어도 무방)
         self.proxy_generating: bool = False
+        self.proxy_progress: float = 0.0
         self.proxy_proc_holder: dict = {}  # 실행 중인 프록시 ffmpeg 프로세스를 담아, 굽기가 시작되면 양보받기 위해 중지에 사용
 
         # 무음(말 없는) 구간 잘라내기 작업 상태

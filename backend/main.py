@@ -448,17 +448,23 @@ def get_status(job_id: str):
         "progress": job.progress,
         "proxy_generating": job.proxy_generating,
         "proxy_ready": job.proxy_path.exists(),
+        "proxy_progress": job.proxy_progress,
     }
 
 
 def _run_make_proxy(job: jobs.Job) -> None:
     job.proxy_proc_holder = {}
+    job.proxy_progress = 0.0
     try:
-        transcribe.make_preview_proxy(job.video_path, job.proxy_path, proc_holder=job.proxy_proc_holder)
+        for fraction, _current_seconds, _duration in transcribe.make_preview_proxy(
+            job.video_path, job.proxy_path, proc_holder=job.proxy_proc_holder
+        ):
+            job.proxy_progress = fraction
     except Exception:  # noqa: BLE001
         pass  # 실패해도 원본으로 계속 서빙되므로 사용자에게 보여줄 필요 없다.
     finally:
         job.proxy_generating = False
+        job.proxy_progress = 0.0
 
 
 def _start_proxy_generation(job: jobs.Job) -> None:

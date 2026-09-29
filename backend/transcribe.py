@@ -90,9 +90,10 @@ def get_video_resolution(video_path: Path) -> tuple[int, int] | None:
     return int(match.group(1)), int(match.group(2))
 
 
-def make_preview_proxy(video_path: Path, output_path: Path, proc_holder: dict | None = None) -> None:
-    """미리보기 재생이 버벅이지 않도록 720p로 다운스케일한 프록시를 만든다.
-    이미 720p 이하인 영상은 프록시가 필요 없으므로 아무것도 하지 않고 반환한다
+def make_preview_proxy(video_path: Path, output_path: Path, proc_holder: dict | None = None):
+    """미리보기 재생이 버벅이지 않도록 720p로 다운스케일한 프록시를 만들며
+    (진행률 0~1, 현재 초, 전체 길이(초))를 하나씩 생성한다.
+    이미 720p 이하인 영상은 프록시가 필요 없으므로 아무것도 만들지 않고 그대로 반환한다
     (호출 측은 output_path가 생기지 않으면 원본을 계속 서빙한다).
     굽기(burn_subtitles)는 이 프록시를 쓰지 않고 항상 원본 영상을 사용한다.
 
@@ -103,6 +104,7 @@ def make_preview_proxy(video_path: Path, output_path: Path, proc_holder: dict | 
     if resolution is None or resolution[1] <= 720:
         return
 
+    duration = get_duration(video_path)
     tmp_path = output_path.with_suffix(".tmp.mp4")
     cmd = [
         "ffmpeg", "-y",
@@ -112,16 +114,25 @@ def make_preview_proxy(video_path: Path, output_path: Path, proc_holder: dict | 
         "-c:v", "h264_videotoolbox", "-b:v", "3M",
         "-c:a", "aac", "-b:a", "128k",
         "-movflags", "+faststart",
+        "-progress", "pipe:1", "-nostats",
         str(tmp_path),
     ]
-    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if proc_holder is not None:
         proc_holder["proc"] = proc
-    _, stderr = proc.communicate()
+    time_re = re.compile(r"out_time_ms=(\d+)")
+    for line in proc.stdout:
+        m = time_re.search(line)
+        if m:
+            seconds = int(m.group(1)) / 1_000_000
+            fraction = min(seconds / duration, 1.0) if duration else 0.0
+            yield fraction, seconds, duration
+    proc.wait()
     if proc.returncode != 0:
         tmp_path.unlink(missing_ok=True)
         if proc_holder is not None and proc_holder.get("cancelled"):
             return  # 굽기에 자원을 양보하기 위해 의도적으로 중지시킨 경우 -> 조용히 종료
+        stderr = proc.stderr.read()
         raise RuntimeError(f"ffmpeg 미리보기 프록시 생성 실패: {stderr.strip()[-500:]}")
     tmp_path.replace(output_path)
 
