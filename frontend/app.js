@@ -64,6 +64,7 @@ const syncSnapBtn = document.getElementById("sync-snap-btn");
 const syncSelectToEndBtn = document.getElementById("sync-select-to-end-btn");
 const syncClearBtn = document.getElementById("sync-clear-btn");
 const currentTimeDisplay = document.getElementById("current-time-display");
+const skipGapsCheckbox = document.getElementById("skip-gaps-checkbox");
 const proxyStatusBadge = document.getElementById("proxy-status-badge");
 const audioPreviewBadge = document.getElementById("audio-preview-badge");
 const avToggleBtn = document.getElementById("av-toggle-btn");
@@ -946,6 +947,12 @@ player.addEventListener("timeupdate", () => {
   captionOverlay.textContent = activeSeg ? activeSeg.text : "";
   currentTimeDisplay.textContent = `현재 ${formatTime(player.currentTime)} (${player.currentTime.toFixed(2)}s)`;
   updateTimelinePlayhead();
+
+  // 재생 중 자막이 없는(무음 등) 구간이면 다음 자막 시작 지점으로 바로 건너뛴다.
+  if (!activeSeg && skipGapsCheckbox.checked && !player.paused) {
+    const next = segments.find((seg) => seg.start > player.currentTime);
+    if (next) player.currentTime = next.start;
+  }
 });
 
 player.addEventListener("loadedmetadata", initTimeline);
