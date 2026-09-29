@@ -883,11 +883,19 @@ saveBtn.addEventListener("click", () => {
 });
 
 // --- 자막 스타일 실시간 미리보기 ---------------------------------------------
+// 실제 굽기(burn_subtitles)는 항상 1280 너비를 기준(original_size=1280x720)으로
+// 글자 크기/여백을 계산하므로, 미리보기도 영상이 실제 화면에서 렌더링된 폭에 맞춰
+// 그 비율만큼 확대/축소해야 굽기 결과와 동일하게 보인다 (영상 카드가 커지면 자막도 커짐).
+function getCaptionScale() {
+  return (player.clientWidth || 1280) / 1280;
+}
+
 function applyCaptionStyle() {
-  captionOverlay.style.setProperty("--cap-size", styleSize.value);
+  const scale = getCaptionScale();
+  captionOverlay.style.setProperty("--cap-size", styleSize.value * scale);
   captionOverlay.style.setProperty("--cap-color", styleColor.value);
   captionOverlay.style.setProperty("--cap-outline", styleOutlineColor.value);
-  captionOverlay.style.setProperty("--cap-margin", `${styleMargin.value}px`);
+  captionOverlay.style.setProperty("--cap-margin", `${styleMargin.value * scale}px`);
   captionOverlay.style.setProperty("--cap-width", `${styleWidth.value}%`);
   captionOverlay.classList.remove("pos-top", "pos-middle");
   if (stylePosition.value === "top") captionOverlay.classList.add("pos-top");
@@ -916,6 +924,8 @@ function saveBurnStylePrefs() {
     body: JSON.stringify(currentStyleForSave()),
   });
 }
+
+new ResizeObserver(applyCaptionStyle).observe(player);
 
 [styleSize, styleColor, styleOutlineColor, stylePosition, styleMargin, styleWidth].forEach((el) => {
   el.addEventListener("input", applyCaptionStyle);
