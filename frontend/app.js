@@ -110,8 +110,20 @@ function snapshotSegments() {
 }
 
 // --- 자동 저장 ---------------------------------------------------------------
+// 여러 구간을 빠르게 연달아 고치면 PUT 요청이 여러 개 동시에 날아갈 수 있는데,
+// 네트워크/서버 처리 순서가 보장되지 않아 나중에 고친 내용이 먼저 도착한(더 오래된)
+// 요청에 덮어써질 수 있다. 그래서 한 번에 하나씩만, 항상 최신 segments로 보내도록
+// 직렬화한다 (진행 중일 때 또 호출되면 큐잉만 해두고, 끝나면 그때의 최신 상태로 한 번 더 저장).
+let saveInFlight = false;
+let savePending = null;
+
 async function saveSegments(showLabel) {
   if (!jobId) return;
+  if (saveInFlight) {
+    savePending = showLabel;
+    return;
+  }
+  saveInFlight = true;
   try {
     const res = await fetch(`/api/videos/${jobId}/subtitles`, {
       method: "PUT",
@@ -121,6 +133,13 @@ async function saveSegments(showLabel) {
     saveStatus.textContent = res.ok ? showLabel : "저장 실패";
   } catch {
     saveStatus.textContent = "저장 실패";
+  }
+  saveInFlight = false;
+  if (savePending !== null) {
+    const next = savePending;
+    savePending = null;
+    saveSegments(next);
+    return;
   }
   setTimeout(() => { saveStatus.textContent = ""; }, 2000);
 }
