@@ -10,6 +10,17 @@ _HANGUL_RE = re.compile(r"[가-힣]")
 _UNEXPECTED_SCRIPT_RE = re.compile(
     r"[؀-ۿЀ-ӿऀ-ॿ一-鿿฀-๿]"
 )  # 아랍/키릴/데바나가리/한자/태국 문자 등 - 이 영상엔 나올 일이 없는 문자들
+_UNIT_WORD_RE = re.compile(r"km/h|km|kg|cm|mm|m", re.IGNORECASE)
+_NUMBER_UNIT_JUNK_RE = re.compile(r"[\d\s?!.,~/-]")
+
+
+def _is_number_with_unit(text: str) -> bool:
+    """'10km', '32km?', '10? 20Km? 15km?'처럼 숫자와 흔한 단위(km/kg/m 등)만 있는
+    경우를 판별한다. 라이딩 중 거리/속도를 부르는 정상적인 발화인데, 한글이 없다는
+    이유만으로 '영어 혼동'으로 계속 오탐되는 걸 막기 위함."""
+    stripped = _UNIT_WORD_RE.sub("", text)
+    stripped = _NUMBER_UNIT_JUNK_RE.sub("", stripped)
+    return stripped == ""
 
 
 def find_flag(segments: list[Segment], index: int) -> str | None:
@@ -26,8 +37,14 @@ def find_flag(segments: list[Segment], index: int) -> str | None:
 
     has_hangul = bool(_HANGUL_RE.search(text))
     is_short_acronym = text.isupper() and len(text.replace(" ", "")) <= 6
-    if not has_hangul and any(c.isalpha() for c in text) and not is_short_acronym:
-        # 한글이 전혀 없이 영어 단어/문장만 있는 경우 (DJI, KT 같은 짧은 대문자 약어는 정상적인 브랜드명이라 제외)
+    if (
+        not has_hangul
+        and any(c.isalpha() for c in text)
+        and not is_short_acronym
+        and not _is_number_with_unit(text)
+    ):
+        # 한글이 전혀 없이 영어 단어/문장만 있는 경우 (DJI, KT 같은 짧은 대문자 약어는 정상적인 브랜드명이라 제외,
+        # "10km"/"32km?"처럼 숫자+단위만 있는 경우도 라이딩 중 정상 발화라 제외)
         return "한글 없이 영어로만 인식됨 (언어 혼동 의심)"
 
     if index > 0 and segments[index - 1].text.strip() == text:
