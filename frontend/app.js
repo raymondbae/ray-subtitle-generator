@@ -851,7 +851,7 @@ function appendSegRow(seg, index) {
     textAutoSaveTimer = setTimeout(() => {
       pushHistory();
       saveSegments("자동 저장됨");
-    }, 1200);
+    }, 400);
   });
   text.addEventListener("focus", () => {
     player.pause();
@@ -1232,7 +1232,18 @@ function renderTimelineBlocks() {
 }
 
 // 자막 블록 오른쪽(뒤쪽) 끝의 손잡이를 드래그해서 길이(끝 시각)만 조절한다.
+// 타임라인을 조작하기 직전에, 편집 중이던 자막 텍스트가 있으면 먼저 blur시켜서
+// (일반적으로는 blur가 곧바로 저장을 트리거함) 즉시 저장되게 한다. 이걸 안 하면
+// e.preventDefault() 때문에 blur가 안 일어나 편집 내용이 debounce 타이머까지 남아있는다.
+function flushActiveTextEdit() {
+  const active = document.activeElement;
+  if (active && active.classList && active.classList.contains("seg-text")) {
+    active.blur();
+  }
+}
+
 function startTimelineResize(e, index, block) {
+  flushActiveTextEdit();
   e.preventDefault();
   const seg = segments[index];
   const startX = e.clientX;
@@ -1266,6 +1277,7 @@ function startTimelineResize(e, index, block) {
 }
 
 function startTimelineDrag(e, index, block) {
+  flushActiveTextEdit();
   e.preventDefault();
   const seg = segments[index];
   tlDragState = { index, startX: e.clientX, startLeftPx: seg.start * tlPxPerSecond, moved: false };
