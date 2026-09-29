@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>한국어 자막 생성기</title>
-<link rel="stylesheet" href="style.css?v=45">
+<link rel="stylesheet" href="style.css?v=46">
 </head>
 <body>
   <header class="app-header">
@@ -88,7 +88,20 @@
         <div class="style-row">
           <label>글자 크기<input type="range" id="style-size" min="20" max="60" value="32"><span id="style-size-val">32</span></label>
           <label>글자 색<input type="color" id="style-color" value="#ffffff"></label>
+          <div class="color-presets" data-target="style-color">
+            <button type="button" class="color-swatch" style="background:#ffffff" data-color="#ffffff" title="흰색"></button>
+            <button type="button" class="color-swatch" style="background:#000000" data-color="#000000" title="검정"></button>
+            <button type="button" class="color-swatch" style="background:#ffeb3b" data-color="#ffeb3b" title="노랑"></button>
+            <button type="button" class="color-swatch" style="background:#ef4444" data-color="#ef4444" title="빨강"></button>
+            <button type="button" class="color-swatch" style="background:#38bdf8" data-color="#38bdf8" title="하늘색"></button>
+          </div>
           <label>테두리 색<input type="color" id="style-outline-color" value="#000000"></label>
+          <div class="color-presets" data-target="style-outline-color">
+            <button type="button" class="color-swatch" style="background:#000000" data-color="#000000" title="검정"></button>
+            <button type="button" class="color-swatch" style="background:#ffffff" data-color="#ffffff" title="흰색"></button>
+            <button type="button" class="color-swatch" style="background:#ef4444" data-color="#ef4444" title="빨강"></button>
+            <button type="button" class="color-swatch" style="background:#1e3a8a" data-color="#1e3a8a" title="남색"></button>
+          </div>
           <label>자막 폭<input type="range" id="style-width" min="40" max="100" value="90"><span id="style-width-val">90</span>%</label>
         </div>
         <div class="style-row">
@@ -153,6 +166,6 @@
     </div>
   </section>
 
-  <script src="app.js?v=46"></script>
+  <script src="app.js?v=47"></script>
 </body>
 </html>

@@ -473,6 +473,26 @@ body {
   cursor: pointer;
 }
 
+.color-presets {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: -8px;
+}
+
+.color-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  padding: 0;
+  cursor: pointer;
+}
+
+.color-swatch:hover {
+  transform: scale(1.15);
+}
+
 .style-row select {
   padding: 6px 8px;
   border-radius: 6px;

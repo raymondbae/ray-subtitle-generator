@@ -931,6 +931,18 @@ new ResizeObserver(applyCaptionStyle).observe(player);
   el.addEventListener("input", applyCaptionStyle);
   el.addEventListener("change", saveBurnStylePrefs);
 });
+
+// 색상 피커를 직접 열지 않고도 자주 쓰는 색을 한 번에 고를 수 있는 샘플 스와치
+document.querySelectorAll(".color-presets").forEach((group) => {
+  const target = document.getElementById(group.dataset.target);
+  group.querySelectorAll(".color-swatch").forEach((swatch) => {
+    swatch.addEventListener("click", () => {
+      target.value = swatch.dataset.color;
+      applyCaptionStyle();
+      saveBurnStylePrefs();
+    });
+  });
+});
 applyCaptionStyle();
 
 // 마지막으로 저장된 스타일을 불러와 컨트롤에 반영한다.
