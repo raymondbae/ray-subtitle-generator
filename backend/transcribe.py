@@ -106,6 +106,7 @@ def make_preview_proxy(video_path: Path, output_path: Path, proc_holder: dict | 
     tmp_path = output_path.with_suffix(".tmp.mp4")
     cmd = [
         "ffmpeg", "-y",
+        "-hwaccel", "videotoolbox",  # 4K/HEVC 등 무거운 원본의 디코딩도 하드웨어 가속으로 (CPU 소프트웨어 디코딩 병목 방지)
         "-i", str(video_path),
         "-vf", "scale=-2:720",
         "-c:v", "h264_videotoolbox", "-b:v", "3M",
@@ -160,6 +161,7 @@ def burn_subtitles(video_path: Path, srt_path: Path, output_path: Path, style: d
 
     cmd = [
         "ffmpeg", "-y",
+        "-hwaccel", "videotoolbox",  # 4K/HEVC 등 무거운 원본의 디코딩도 하드웨어 가속으로
         "-i", str(video_path),
         "-vf", vf,
         "-c:v", "h264_videotoolbox", "-b:v", b_v,

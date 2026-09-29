@@ -36,6 +36,20 @@ def compute_keep_ranges(
     return [(s, e) for s, e in merged if e > s]
 
 
+def invert_ranges(ranges: list[tuple[float, float]], duration: float) -> list[tuple[float, float]]:
+    """정렬되어 있고 서로 겹치지 않는 ranges(말하는 구간)의 여집합, 즉 그 사이의
+    빈 틈(무음 구간)을 반환한다. "무음 구간만 모아서 영상 만들기"에 사용."""
+    gaps: list[tuple[float, float]] = []
+    cursor = 0.0
+    for start, end in ranges:
+        if start > cursor:
+            gaps.append((cursor, start))
+        cursor = max(cursor, end)
+    if duration > cursor:
+        gaps.append((cursor, duration))
+    return gaps
+
+
 def remap_segments(segments: list[Segment], keep_ranges: list[tuple[float, float]]) -> list[Segment]:
     """잘라낸 새 타임라인 기준으로 각 세그먼트의 start/end를 다시 계산한다."""
     result: list[Segment] = []
@@ -75,6 +89,7 @@ def cut_silence(video_path: Path, keep_ranges: list[tuple[float, float]], output
 
     cmd = [
         "ffmpeg", "-y",
+        "-hwaccel", "videotoolbox",  # 4K/HEVC 등 무거운 원본의 디코딩도 하드웨어 가속으로
         "-i", str(video_path),
         "-filter_complex", filter_complex,
         "-map", "[v]", "-map", "[a]",

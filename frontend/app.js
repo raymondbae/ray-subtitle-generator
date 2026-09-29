@@ -50,6 +50,7 @@ const burnProgressMessage = document.getElementById("burn-progress-message");
 const burnProgressPercent = document.getElementById("burn-progress-percent");
 const cutBtn = document.getElementById("cut-btn");
 const cutCancelBtn = document.getElementById("cut-cancel-btn");
+const cutInvertCheckbox = document.getElementById("cut-invert-checkbox");
 const cutProgressWrap = document.getElementById("cut-progress-wrap");
 const cutProgressFill = document.getElementById("cut-progress-fill");
 const cutProgressMessage = document.getElementById("cut-progress-message");
@@ -62,6 +63,7 @@ const syncSnapBtn = document.getElementById("sync-snap-btn");
 const syncSelectToEndBtn = document.getElementById("sync-select-to-end-btn");
 const syncClearBtn = document.getElementById("sync-clear-btn");
 const currentTimeDisplay = document.getElementById("current-time-display");
+const proxyStatusBadge = document.getElementById("proxy-status-badge");
 
 let jobId = null;
 let segments = [];
@@ -315,7 +317,24 @@ window.addEventListener("DOMContentLoaded", async () => {
       pollCutStatus();
     }
   }
+
+  pollProxyStatus();
 });
+
+// 원본 대신 재생할 저용량 미리보기 프록시가 아직 만들어지는 중이면, 그동안 원본을
+// 그대로 스트리밍하느라 미리보기가 끊길 수 있어 사용자에게 그 사실을 알려준다.
+async function pollProxyStatus() {
+  if (!jobId) return;
+  const res = await fetch(`/api/videos/${jobId}/status`);
+  if (!res.ok) return;
+  const data = await res.json();
+  if (data.proxy_generating) {
+    proxyStatusBadge.hidden = false;
+    setTimeout(pollProxyStatus, 3000);
+  } else {
+    proxyStatusBadge.hidden = true;
+  }
+}
 
 // --- 작업 히스토리 -----------------------------------------------------------
 function formatDate(ts) {
@@ -595,6 +614,7 @@ async function finalizeSubtitles() {
   if (flagCount > 0) {
     alert(`자막 생성이 끝났습니다.\n⚠ 확인이 필요한 구간이 ${flagCount}곳 있어요 ("다음 확인 필요 구간" 버튼으로 하나씩 훑어보세요).`);
   }
+  pollProxyStatus();
 }
 
 function formatTime(sec) {
@@ -1004,6 +1024,13 @@ function setCutProgress(message, fraction, currentSeconds, duration) {
   cutProgressFill.style.width = `${percent}%`;
 }
 
+function updateCutBtnLabel() {
+  cutBtn.textContent = cutInvertCheckbox.checked
+    ? "🔇 무음 구간만 모아서 영상 만들기 (위에서 고른 영상 사용)"
+    : "✂ 무음 구간 잘라내기 (위에서 고른 영상 사용)";
+}
+cutInvertCheckbox.addEventListener("change", updateCutBtnLabel);
+
 cutBtn.addEventListener("click", async () => {
   if (!jobId || !burnSourcePathValue) return;
 
@@ -1014,7 +1041,7 @@ cutBtn.addEventListener("click", async () => {
   const res = await fetch(`/api/videos/${jobId}/cut-silence`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ source_path: burnSourcePathValue }),
+    body: JSON.stringify({ source_path: burnSourcePathValue, invert: cutInvertCheckbox.checked }),
   });
   if (!res.ok) {
     setCutProgress("실패: " + (await res.text()), 0);

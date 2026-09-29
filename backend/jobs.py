@@ -89,10 +89,11 @@ class Job:
         stamp = time.strftime("%Y%m%d_%H%M")
         return source_path.parent / f"{source_path.stem}_자막입힘_{stamp}.mp4"
 
-    def cut_output_path_for(self, source_path: Path) -> Path:
-        """무음 구간을 잘라낸 영상도 원본과 같은 디렉토리에, 날짜/시간을 붙여 저장한다."""
+    def cut_output_path_for(self, source_path: Path, label: str = "무음컷") -> Path:
+        """컷편집 결과 영상도 원본과 같은 디렉토리에, 날짜/시간을 붙여 저장한다.
+        label로 "무음컷"(말하는 부분만 남김) / "무음모음"(무음 구간만 남김)을 구분한다."""
         stamp = time.strftime("%Y%m%d_%H%M")
-        return source_path.parent / f"{source_path.stem}_무음컷_{stamp}.mp4"
+        return source_path.parent / f"{source_path.stem}_{label}_{stamp}.mp4"
 
     @property
     def meta_path(self) -> Path:

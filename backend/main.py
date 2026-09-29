@@ -195,6 +195,7 @@ class BurnIn(BaseModel):
 
 class CutIn(BaseModel):
     source_path: str
+    invert: bool = False  # True면 반대로 무음 구간만 남기고 자막 있는 부분을 잘라낸다
 
 
 @app.get("/api/burn-style")
@@ -290,9 +291,9 @@ def get_burn_status(job_id: str):
     }
 
 
-def _run_cut(job: jobs.Job, source_path: Path) -> None:
+def _run_cut(job: jobs.Job, source_path: Path, invert: bool = False) -> None:
     job.cut_proc_holder = {}
-    output_path = job.cut_output_path_for(source_path)
+    output_path = job.cut_output_path_for(source_path, label="무음모음" if invert else "무음컷")
     try:
         job.cut_status = "processing"
         job.cut_progress = 0.0
@@ -301,20 +302,27 @@ def _run_cut(job: jobs.Job, source_path: Path) -> None:
         segments = srt_to_segments(job.srt_path.read_text(encoding="utf-8"))
         duration = transcribe.get_duration(source_path)
         keep_ranges = cutter.compute_keep_ranges(segments, duration)
-        if not keep_ranges:
+        if invert:
+            keep_ranges = cutter.invert_ranges(keep_ranges, duration)
+            if not keep_ranges:
+                raise RuntimeError("무음 구간이 없습니다 (자막이 영상 전체를 덮고 있음).")
+        elif not keep_ranges:
             raise RuntimeError("남길 구간이 없습니다 (자막이 비어 있음).")
 
-        job.cut_message = "무음 구간 잘라내는 중..."
+        job.cut_message = "무음 구간 잘라내는 중..." if not invert else "무음 구간만 모으는 중..."
         for fraction, current_seconds, total_seconds in cutter.cut_silence(
             source_path, keep_ranges, output_path, proc_holder=job.cut_proc_holder
         ):
             job.cut_progress = fraction
             job.cut_current_seconds = current_seconds
             job.cut_total_seconds = total_seconds
-            job.cut_message = f"무음 구간 잘라내는 중... ({round(fraction * 100)}%)"
+            verb = "모으는" if invert else "잘라내는"
+            job.cut_message = f"무음 구간 {verb} 중... ({round(fraction * 100)}%)"
 
-        remapped = cutter.remap_segments(segments, keep_ranges)
-        output_path.with_suffix(".srt").write_text(segments_to_srt(remapped), encoding="utf-8")
+        if not invert:
+            # 무음만 남긴 영상은 대사가 없으므로 자막을 만들 이유가 없다.
+            remapped = cutter.remap_segments(segments, keep_ranges)
+            output_path.with_suffix(".srt").write_text(segments_to_srt(remapped), encoding="utf-8")
 
         job.cut_status = "done"
         job.cut_progress = 1.0
@@ -360,7 +368,7 @@ def start_cut(job_id: str, body: CutIn):
 
     _yield_proxy_encoder(job)
 
-    thread = threading.Thread(target=_run_cut, args=(job, source_path), daemon=True)
+    thread = threading.Thread(target=_run_cut, args=(job, source_path, body.invert), daemon=True)
     thread.start()
     return {"status": "processing"}
 
@@ -434,7 +442,13 @@ def get_status(job_id: str):
     job = jobs.get_job(job_id)
     if job is None:
         raise HTTPException(404, "존재하지 않는 job_id 입니다.")
-    return {"status": job.status, "message": job.message, "progress": job.progress}
+    return {
+        "status": job.status,
+        "message": job.message,
+        "progress": job.progress,
+        "proxy_generating": job.proxy_generating,
+        "proxy_ready": job.proxy_path.exists(),
+    }
 
 
 def _run_make_proxy(job: jobs.Job) -> None:

@@ -267,6 +267,16 @@ body {
   white-space: pre-wrap;
 }
 
+.proxy-status-badge {
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #fff8e1;
+  color: #8a6d00;
+  font-size: 13px;
+  display: inline-block;
+}
+
 .caption-overlay.pos-top {
   top: var(--cap-margin);
   bottom: auto;
