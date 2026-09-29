@@ -90,6 +90,14 @@ let tlPxPerSecond = Number(tlZoomSlider.value);
 let tlVideoDuration = 0;
 let tlWaveformFetchTimer = null;
 let tlDragState = null; // 드래그 중일 때만 { index, startX, startLeftPx } 형태로 채워짐
+let timelineBlockLabels = []; // 자막 텍스트만 수정됐을 때 전체를 다시 그리지 않고 이 라벨만 갱신하기 위함
+
+function updateTimelineBlockText(index, newText) {
+  const entry = timelineBlockLabels[index];
+  if (!entry) return;
+  entry.label.textContent = newText;
+  entry.block.title = entry.overlapping ? `${newText}\n⚠ 다른 자막과 시간이 겹칩니다` : newText;
+}
 
 // --- 실행 취소 / 다시 실행 -------------------------------------------------
 let history = [];
@@ -799,6 +807,7 @@ function appendSegRow(seg, index) {
   const originalFlaggedText = seg.text;
   text.addEventListener("input", () => {
     segments[index].text = text.textContent;
+    updateTimelineBlockText(index, text.textContent);
     // 플래그된 줄을 실제로 고치면, 그 순간 확인 완료로 보고 표시를 지운다.
     if (seg.flag && text.textContent !== originalFlaggedText) {
       seg.flag = null;
@@ -1153,6 +1162,7 @@ function renderTimelineBlocks() {
   timelineContent.style.height = `${40 + laneCount * TL_LANE_HEIGHT + 4}px`;
   timelineScroll.style.height = `${40 + laneCount * TL_LANE_HEIGHT + 4}px`;
 
+  timelineBlockLabels = [];
   segments.forEach((seg, index) => {
     const block = document.createElement("div");
     block.className = "timeline-block";
@@ -1161,9 +1171,16 @@ function renderTimelineBlocks() {
     block.style.left = `${seg.start * tlPxPerSecond}px`;
     block.style.top = `${4 + lanes[index] * TL_LANE_HEIGHT}px`;
     block.style.width = `${Math.max(2, (seg.end - seg.start) * tlPxPerSecond)}px`;
-    block.textContent = seg.text;
-    block.title = overlapping.has(index) ? `${seg.text}\n⚠ 다른 자막과 시간이 겹칩니다` : seg.text;
     block.addEventListener("pointerdown", (e) => startTimelineDrag(e, index, block));
+
+    // 텍스트를 block.textContent로 직접 넣으면 resize 손잡이 div까지 지워버리므로,
+    // 텍스트 전용 span에 넣어 자막 수정 시 이 span만 targeted하게 갱신할 수 있게 한다.
+    const label = document.createElement("span");
+    label.className = "timeline-block-label";
+    label.textContent = seg.text;
+    block.title = overlapping.has(index) ? `${seg.text}\n⚠ 다른 자막과 시간이 겹칩니다` : seg.text;
+    block.appendChild(label);
+    timelineBlockLabels[index] = { block, label, overlapping: overlapping.has(index) };
 
     const resizeHandle = document.createElement("div");
     resizeHandle.className = "timeline-block-resize";
