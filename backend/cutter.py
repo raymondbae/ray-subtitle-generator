@@ -15,7 +15,7 @@ from transcribe import BurnCancelled, get_duration, get_video_bitrate
 
 
 def compute_keep_ranges(
-    segments: list[Segment], duration: float, padding: float = 0.3, min_gap: float = 2.0
+    segments: list[Segment], duration: float, padding: float = 0.5, min_gap: float = 2.0
 ) -> list[tuple[float, float]]:
     """각 자막 줄에 패딩을 두른 뒤, 사이 간격이 min_gap보다 좁으면 합쳐서
     시간순으로 정렬되고 서로 겹치지 않는 (start, end) 구간 목록을 만든다."""
