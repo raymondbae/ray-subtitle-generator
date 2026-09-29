@@ -662,6 +662,9 @@ async function syncSubtitles() {
   }
   subtitleList.scrollTop = subtitleList.scrollHeight;
   updateFlagCount();
+  // 새로고침 시 영상 메타데이터 로드(-> initTimeline)와 이 자막 불러오기가 경쟁 상태라,
+  // 타임라인이 먼저 그려지면 자막이 비어 보일 수 있어 여기서도 다시 그려서 맞춰준다.
+  renderTimelineBlocks();
 }
 
 // 자막 생성이 끝나면, 처리 중 스트리밍된 것과 개수가 다를 수 있으므로(할루시네이션/필러
