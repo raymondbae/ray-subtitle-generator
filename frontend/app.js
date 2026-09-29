@@ -83,6 +83,7 @@ let jobId = null;
 let segments = [];
 let pickedPath = null;
 let changedIndices = [];
+let textAutoSaveTimer = null; // blur가 늦거나(타임라인 드래그 시작 등으로 막힘) 안 일어나도 편집 내용이 유실되지 않도록 하는 안전망
 const selectedIndices = new Set();
 
 // --- 타임라인 -----------------------------------------------------------
@@ -816,11 +817,19 @@ function appendSegRow(seg, index) {
       flagIcon.hidden = true;
       updateFlagCount();
     }
+    // blur가 늦거나 안 일어나도(예: 타임라인 드래그 시작 시 e.preventDefault로 블러가
+    // 막힘) 편집 내용이 유실되지 않도록, 타이핑이 잠시 멈추면 자동으로도 저장한다.
+    clearTimeout(textAutoSaveTimer);
+    textAutoSaveTimer = setTimeout(() => {
+      pushHistory();
+      saveSegments("자동 저장됨");
+    }, 1200);
   });
   text.addEventListener("focus", () => {
     player.pause();
   });
   text.addEventListener("blur", () => {
+    clearTimeout(textAutoSaveTimer);
     pushHistory();
     saveSegments("자동 저장됨");
   });
