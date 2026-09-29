@@ -91,6 +91,20 @@ def get_video_resolution(video_path: Path) -> tuple[int, int] | None:
     return int(match.group(1)), int(match.group(2))
 
 
+def is_10bit_or_higher(video_path: Path) -> bool:
+    """10비트 이상(HDR 등)인지 픽셀 포맷으로 판단한다. 8비트는 macOS 하드웨어 디코더가
+    해상도에 상관없이 매끄럽게 처리하므로 프록시가 필요 없고, 10비트 이상만 하드웨어
+    디코드 지원이 제한적이라 끊길 수 있어 프록시가 필요하다."""
+    result = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+         "-show_entries", "stream=pix_fmt",
+         "-of", "default=noprint_wrappers=1:nokey=1", str(video_path)],
+        capture_output=True, text=True,
+    )
+    pix_fmt = result.stdout.strip().lower()
+    return any(tag in pix_fmt for tag in ("10", "12", "16", "p010", "p012", "p016"))
+
+
 def extract_waveform_peaks(video_path: Path, start: float, end: float, points: int) -> list[float]:
     """타임라인 파형 표시용으로, [start, end] 구간의 오디오만 뽑아 points개의 피크(0~1)로 downsample한다.
     -vn으로 비디오 스트림은 아예 건드리지 않아, 4K/HEVC 원본이어도 빠르게 처리된다."""
@@ -118,7 +132,8 @@ def extract_waveform_peaks(video_path: Path, start: float, end: float, points: i
 def make_preview_proxy(video_path: Path, output_path: Path, proc_holder: dict | None = None):
     """미리보기 재생이 버벅이지 않도록 720p로 다운스케일한 프록시를 만들며
     (진행률 0~1, 현재 초, 전체 길이(초))를 하나씩 생성한다.
-    이미 720p 이하인 영상은 프록시가 필요 없으므로 아무것도 만들지 않고 그대로 반환한다
+    720p 이하이거나, 4K라도 8비트라서 macOS 하드웨어 디코더가 매끄럽게 처리하는
+    영상은 프록시가 필요 없으므로 아무것도 만들지 않고 그대로 반환한다
     (호출 측은 output_path가 생기지 않으면 원본을 계속 서빙한다).
     굽기(burn_subtitles)는 이 프록시를 쓰지 않고 항상 원본 영상을 사용한다.
 
@@ -127,6 +142,8 @@ def make_preview_proxy(video_path: Path, output_path: Path, proc_holder: dict | 
     """
     resolution = get_video_resolution(video_path)
     if resolution is None or resolution[1] <= 720:
+        return
+    if not is_10bit_or_higher(video_path):
         return
 
     duration = get_duration(video_path)

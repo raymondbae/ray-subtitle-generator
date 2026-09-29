@@ -47,6 +47,7 @@ class Job:
         self.proxy_generating: bool = False
         self.proxy_progress: float = 0.0
         self.proxy_proc_holder: dict = {}  # 실행 중인 프록시 ffmpeg 프로세스를 담아, 굽기가 시작되면 양보받기 위해 중지에 사용
+        self.proxy_needed: bool | None = None  # None=아직 판단 안 함. ffprobe 반복 호출을 피하려고 한 번 계산해 캐싱한다.
 
         # 무음(말 없는) 구간 잘라내기 작업 상태
         self.cut_status: str = "idle"  # idle | processing | done | error | cancelled

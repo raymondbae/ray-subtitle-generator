@@ -438,6 +438,17 @@ def start_transcribe(job_id: str):
     return {"status": "processing"}
 
 
+def _video_needs_proxy(job: jobs.Job) -> bool:
+    """720p 이하이거나 8비트라서 macOS 하드웨어 디코더가 매끄럽게 재생할 수 있는 영상은
+    프록시가 필요 없다. ffprobe를 매번 다시 부르지 않도록 한 번 계산해 job에 캐싱한다."""
+    if job.proxy_needed is None:
+        resolution = transcribe.get_video_resolution(job.video_path)
+        job.proxy_needed = bool(
+            resolution and resolution[1] > 720 and transcribe.is_10bit_or_higher(job.video_path)
+        )
+    return job.proxy_needed
+
+
 @app.get("/api/videos/{job_id}/status")
 def get_status(job_id: str):
     job = jobs.get_job(job_id)
@@ -448,7 +459,7 @@ def get_status(job_id: str):
         "message": job.message,
         "progress": job.progress,
         "proxy_generating": job.proxy_generating,
-        "proxy_ready": job.proxy_path.exists(),
+        "proxy_ready": job.proxy_path.exists() or not _video_needs_proxy(job),
         "proxy_progress": job.proxy_progress,
     }
 
@@ -472,6 +483,8 @@ def _start_proxy_generation(job: jobs.Job) -> None:
     # 굽기 중에는 하드웨어 인코더(h264_videotoolbox)를 나눠 쓰면 둘 다 느려지므로 미루고,
     # 굽기가 끝난 뒤 다음 재생 요청 때 자연스럽게 다시 시도되게 둔다.
     if job.proxy_path.exists() or job.proxy_generating or job.burn_status == "processing":
+        return
+    if not _video_needs_proxy(job):
         return
     job.proxy_generating = True
     threading.Thread(target=_run_make_proxy, args=(job,), daemon=True).start()
