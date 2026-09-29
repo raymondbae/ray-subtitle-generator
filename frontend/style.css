@@ -27,6 +27,10 @@
 
 * { box-sizing: border-box; }
 
+/* .btn 등 display를 직접 지정하는 요소는 그 규칙이 hidden 속성의 기본 display:none보다
+   우선 적용돼버려서, hidden이어도 안 숨겨지는 문제가 있었다 (굽기/컷 중지 버튼 등). */
+[hidden] { display: none !important; }
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", sans-serif;
   background: var(--bg);
@@ -384,6 +388,10 @@ body {
   background: #ef4444;
   pointer-events: none;
   z-index: 3;
+}
+
+#av-toggle-btn {
+  margin-top: 8px;
 }
 
 .proxy-status-badge {

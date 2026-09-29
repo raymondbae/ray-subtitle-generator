@@ -66,6 +66,7 @@ const syncClearBtn = document.getElementById("sync-clear-btn");
 const currentTimeDisplay = document.getElementById("current-time-display");
 const proxyStatusBadge = document.getElementById("proxy-status-badge");
 const audioPreviewBadge = document.getElementById("audio-preview-badge");
+const avToggleBtn = document.getElementById("av-toggle-btn");
 const timelinePanel = document.getElementById("timeline-panel");
 const timelineScroll = document.getElementById("timeline-scroll");
 const timelineContent = document.getElementById("timeline-content");
@@ -343,38 +344,68 @@ window.addEventListener("DOMContentLoaded", async () => {
 // 무거운 원본을 억지로 스트리밍하지 않도록, 저용량 프록시가 아직 없으면 이미 뽑아둔
 // 오디오(audio.wav)로 먼저 재생을 시작한다 - 자막 싱크는 화면 없이 오디오+타임라인
 // 만으로도 충분하고, 4시간짜리 원본처럼 프록시 변환이 오래 걸리는 경우 특히 유용하다.
+let audioPreviewAvailable = false;
+// player.src를 바꾼 직후에는 player.currentSrc가 곧바로 갱신되지 않아(한 틱 지연),
+// currentSrc로 현재 모드를 판단하면 버튼 라벨 등이 한 박자 늦게 표시된다. 그래서
+// 전환할 때마다 이 변수를 직접 갱신해 항상 정확한 현재 모드를 갖고 있게 한다.
+let usingAudioPreview = false;
+
 function isUsingAudioPreview() {
-  return player.currentSrc.includes("/audio-preview");
+  return usingAudioPreview;
 }
 
-async function initPlayerSource() {
-  const res = await fetch(`/api/videos/${jobId}/status`);
-  const data = await res.json();
-  if (data.proxy_ready) {
-    player.src = `/api/videos/${jobId}/video`;
-    return;
-  }
-  // 이 FastAPI 버전은 HEAD를 GET 라우트에 자동으로 매칭해주지 않으므로, 대신 1바이트만
-  // 요청하는 Range GET으로 존재 여부만 가볍게 확인한다.
-  const audioRes = await fetch(`/api/videos/${jobId}/audio-preview`, { headers: { Range: "bytes=0-0" } });
-  if (audioRes.ok) {
-    player.src = `/api/videos/${jobId}/audio-preview`;
-    audioPreviewBadge.hidden = false;
-    fetch(`/api/videos/${jobId}/ensure-proxy`, { method: "POST" }); // /video를 안 거치므로 프록시 생성을 직접 깨워준다
-  } else {
-    player.src = `/api/videos/${jobId}/video`;
-  }
-}
-
-// 오디오로 먼저 듣고 있다가 프록시가 완성되면, 재생 위치/재생 상태를 유지한 채로 영상으로 갈아탄다.
-function switchToVideoSource() {
+// 재생 위치/재생 상태를 유지한 채로 다른 소스(영상 <-> 오디오)로 갈아탄다.
+function switchPlayerSource(url, isAudio) {
   const wasPlaying = !player.paused;
   const resumeAt = player.currentTime;
   player.addEventListener("loadedmetadata", () => {
     player.currentTime = resumeAt;
     if (wasPlaying) player.play();
   }, { once: true });
-  player.src = `/api/videos/${jobId}/video`;
+  player.src = url;
+  usingAudioPreview = isAudio;
+}
+
+function switchToVideoSource() {
+  switchPlayerSource(`/api/videos/${jobId}/video`, false);
+}
+
+function switchToAudioSource() {
+  switchPlayerSource(`/api/videos/${jobId}/audio-preview`, true);
+}
+
+function updateAvToggleLabel() {
+  avToggleBtn.textContent = isUsingAudioPreview() ? "🎬 영상으로 재생" : "🎧 음성만 재생";
+}
+
+avToggleBtn.addEventListener("click", () => {
+  if (isUsingAudioPreview()) {
+    switchToVideoSource();
+  } else {
+    switchToAudioSource();
+  }
+  updateAvToggleLabel();
+});
+
+async function initPlayerSource() {
+  // 이 FastAPI 버전은 HEAD를 GET 라우트에 자동으로 매칭해주지 않으므로, 대신 1바이트만
+  // 요청하는 Range GET으로 오디오 추출본이 있는지 가볍게 확인한다 (영상/음성 토글 버튼 노출 여부에도 사용).
+  const audioRes = await fetch(`/api/videos/${jobId}/audio-preview`, { headers: { Range: "bytes=0-0" } });
+  audioPreviewAvailable = audioRes.ok;
+  avToggleBtn.hidden = !audioPreviewAvailable;
+
+  const res = await fetch(`/api/videos/${jobId}/status`);
+  const data = await res.json();
+  if (data.proxy_ready || !audioPreviewAvailable) {
+    player.src = `/api/videos/${jobId}/video`;
+    usingAudioPreview = false;
+  } else {
+    player.src = `/api/videos/${jobId}/audio-preview`;
+    usingAudioPreview = true;
+    audioPreviewBadge.hidden = false;
+    fetch(`/api/videos/${jobId}/ensure-proxy`, { method: "POST" }); // /video를 안 거치므로 프록시 생성을 직접 깨워준다
+  }
+  updateAvToggleLabel();
 }
 
 // 원본 대신 재생할 저용량 미리보기 프록시가 아직 만들어지는 중이면, 그동안 원본을
@@ -394,6 +425,7 @@ async function pollProxyStatus() {
     if (data.proxy_ready && isUsingAudioPreview()) {
       audioPreviewBadge.hidden = true;
       switchToVideoSource();
+      updateAvToggleLabel();
     }
   }
 }
