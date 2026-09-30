@@ -194,9 +194,15 @@ class BurnIn(BaseModel):
     style: BurnStyle
 
 
+class ManualRange(BaseModel):
+    start: float
+    end: float
+
+
 class CutIn(BaseModel):
     source_path: str
     invert: bool = False  # True면 반대로 무음 구간만 남기고 자막 있는 부분을 잘라낸다
+    manual_range: ManualRange | None = None  # 있으면 자막 기반 대신 이 구간만 통째로 잘라냄
 
 
 @app.get("/api/burn-style")
@@ -298,33 +304,48 @@ def get_burn_status(job_id: str):
     }
 
 
-def _run_cut(job: jobs.Job, source_path: Path, invert: bool = False) -> None:
+def _run_cut(
+    job: jobs.Job, source_path: Path, invert: bool = False, manual_range: ManualRange | None = None
+) -> None:
     job.cut_proc_holder = {}
-    output_path = job.cut_output_path_for(source_path, label="무음모음" if invert else "무음컷")
+    label = "구간삭제" if manual_range else ("무음모음" if invert else "무음컷")
+    output_path = job.cut_output_path_for(source_path, label=label)
     try:
         job.cut_status = "processing"
         job.cut_progress = 0.0
-        job.cut_message = "무음 구간 분석 중..."
+        job.cut_message = "분석 중..."
 
         segments = srt_to_segments(job.srt_path.read_text(encoding="utf-8"))
         duration = transcribe.get_duration(source_path)
-        keep_ranges = cutter.compute_keep_ranges(segments, duration)
-        if invert:
-            keep_ranges = cutter.invert_ranges(keep_ranges, duration)
-            if not keep_ranges:
-                raise RuntimeError("무음 구간이 없습니다 (자막이 영상 전체를 덮고 있음).")
-        elif not keep_ranges:
-            raise RuntimeError("남길 구간이 없습니다 (자막이 비어 있음).")
 
-        job.cut_message = "무음 구간 잘라내는 중..." if not invert else "무음 구간만 모으는 중..."
+        if manual_range:
+            keep_ranges = cutter.exclude_range(duration, manual_range.start, manual_range.end)
+            if not keep_ranges:
+                raise RuntimeError("표시한 구간이 영상 전체라 남길 부분이 없습니다.")
+        else:
+            keep_ranges = cutter.compute_keep_ranges(segments, duration)
+            if invert:
+                keep_ranges = cutter.invert_ranges(keep_ranges, duration)
+                if not keep_ranges:
+                    raise RuntimeError("무음 구간이 없습니다 (자막이 영상 전체를 덮고 있음).")
+            elif not keep_ranges:
+                raise RuntimeError("남길 구간이 없습니다 (자막이 비어 있음).")
+
+        if manual_range:
+            job.cut_message = "표시한 구간 잘라내는 중..."
+        else:
+            job.cut_message = "무음 구간 잘라내는 중..." if not invert else "무음 구간만 모으는 중..."
         for fraction, current_seconds, total_seconds in cutter.cut_silence(
             source_path, keep_ranges, output_path, proc_holder=job.cut_proc_holder
         ):
             job.cut_progress = fraction
             job.cut_current_seconds = current_seconds
             job.cut_total_seconds = total_seconds
-            verb = "모으는" if invert else "잘라내는"
-            job.cut_message = f"무음 구간 {verb} 중... ({round(fraction * 100)}%)"
+            if manual_range:
+                job.cut_message = f"표시한 구간 잘라내는 중... ({round(fraction * 100)}%)"
+            else:
+                verb = "모으는" if invert else "잘라내는"
+                job.cut_message = f"무음 구간 {verb} 중... ({round(fraction * 100)}%)"
 
         if not invert:
             # 무음만 남긴 영상은 대사가 없으므로 자막을 만들 이유가 없다.
@@ -380,7 +401,9 @@ def start_cut(job_id: str, body: CutIn):
 
     _yield_proxy_encoder(job)
 
-    thread = threading.Thread(target=_run_cut, args=(job, source_path, body.invert), daemon=True)
+    thread = threading.Thread(
+        target=_run_cut, args=(job, source_path, body.invert, body.manual_range), daemon=True
+    )
     thread.start()
     return {"status": "processing"}
 

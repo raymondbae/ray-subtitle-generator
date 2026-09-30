@@ -50,6 +50,20 @@ def invert_ranges(ranges: list[tuple[float, float]], duration: float) -> list[tu
     return gaps
 
 
+def exclude_range(duration: float, cut_start: float, cut_end: float) -> list[tuple[float, float]]:
+    """[cut_start, cut_end] 구간을 통째로 빼고 그 앞/뒤만 남긴다. 자막 작업 중 필요 없다고
+    판단한 임의의 구간을 사용자가 직접 표시해서 잘라내는 기능에 쓰인다 - 자막 기반 패딩/
+    min_gap 없이, 표시한 지점을 그대로 정확히 자른다."""
+    cut_start = max(0.0, min(cut_start, duration))
+    cut_end = max(cut_start, min(cut_end, duration))
+    ranges = []
+    if cut_start > 0:
+        ranges.append((0.0, cut_start))
+    if cut_end < duration:
+        ranges.append((cut_end, duration))
+    return ranges
+
+
 def remap_segments(segments: list[Segment], keep_ranges: list[tuple[float, float]]) -> list[Segment]:
     """잘라낸 새 타임라인 기준으로 각 세그먼트의 start/end를 다시 계산한다."""
     result: list[Segment] = []

@@ -395,6 +395,17 @@ body {
   z-index: 3;
 }
 
+.timeline-manual-cut-highlight {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(220, 38, 38, 0.25);
+  border-left: 2px solid var(--danger);
+  border-right: 2px solid var(--danger);
+  pointer-events: none;
+  z-index: 1;
+}
+
 #av-toggle-btn {
   margin-top: 8px;
 }

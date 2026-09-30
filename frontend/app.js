@@ -56,6 +56,11 @@ const cutProgressWrap = document.getElementById("cut-progress-wrap");
 const cutProgressFill = document.getElementById("cut-progress-fill");
 const cutProgressMessage = document.getElementById("cut-progress-message");
 const cutProgressPercent = document.getElementById("cut-progress-percent");
+const markStartBtn = document.getElementById("mark-start-btn");
+const markEndBtn = document.getElementById("mark-end-btn");
+const manualRangeDisplay = document.getElementById("manual-range-display");
+const deleteRangeBtn = document.getElementById("delete-range-btn");
+const clearRangeBtn = document.getElementById("clear-range-btn");
 const syncSelectedCountEl = document.getElementById("sync-selected-count");
 const syncOffsetInput = document.getElementById("sync-offset-input");
 const syncBackwardBtn = document.getElementById("sync-backward-btn");
@@ -74,6 +79,7 @@ const timelineContent = document.getElementById("timeline-content");
 const timelineRuler = document.getElementById("timeline-ruler");
 const timelineBlocks = document.getElementById("timeline-blocks");
 const timelinePlayhead = document.getElementById("timeline-playhead");
+const timelineManualCutHighlight = document.getElementById("timeline-manual-cut-highlight");
 const timelineWaveform = document.getElementById("timeline-waveform");
 const tlZoomSlider = document.getElementById("tl-zoom-slider");
 const tlZoomOutBtn = document.getElementById("tl-zoom-out");
@@ -86,6 +92,8 @@ let changedIndices = [];
 let textAutoSaveTimer = null; // blur가 늦거나(타임라인 드래그 시작 등으로 막힘) 안 일어나도 편집 내용이 유실되지 않도록 하는 안전망
 let lastSavedPosition = -Infinity; // 재생 위치 저장 스로틀용
 const selectedIndices = new Set();
+let manualCutStart = null;
+let manualCutEnd = null;
 
 // --- 타임라인 -----------------------------------------------------------
 let tlPxPerSecond = Number(tlZoomSlider.value);
@@ -1473,6 +1481,7 @@ function setTimelineZoom(px) {
     renderTimelineRuler();
     renderTimelineBlocks();
     updateTimelinePlayhead();
+    renderManualCutHighlight();
     timelineScroll.scrollLeft = centerTime * tlPxPerSecond - timelineScroll.clientWidth / 2;
   }
   requestWaveformRedraw();
@@ -1604,18 +1613,105 @@ async function pollCutStatus() {
   if (data.status === "done") {
     cutBtn.disabled = false;
     cutCancelBtn.hidden = true;
+    updateManualRangeDisplay();
     setCutProgress(`완료! 저장 위치: ${data.output_path}`, 1, data.duration, data.duration);
   } else if (data.status === "cancelled") {
     cutBtn.disabled = false;
     cutCancelBtn.hidden = true;
+    updateManualRangeDisplay();
     setCutProgress(data.message || "중지됨", 0);
   } else if (data.status === "error") {
     cutBtn.disabled = false;
     cutCancelBtn.hidden = true;
+    updateManualRangeDisplay();
   } else {
     setTimeout(pollCutStatus, 1000);
   }
 }
+
+// --- 구간 표시 후 삭제 --------------------------------------------------------
+function renderManualCutHighlight() {
+  if (manualCutStart == null || manualCutEnd == null) {
+    timelineManualCutHighlight.hidden = true;
+    return;
+  }
+  timelineManualCutHighlight.hidden = false;
+  timelineManualCutHighlight.style.left = `${manualCutStart * tlPxPerSecond}px`;
+  timelineManualCutHighlight.style.width = `${Math.max(2, (manualCutEnd - manualCutStart) * tlPxPerSecond)}px`;
+}
+
+function updateManualRangeDisplay() {
+  if (manualCutStart == null) {
+    manualRangeDisplay.textContent = "";
+  } else if (manualCutEnd == null) {
+    manualRangeDisplay.textContent = `시작: ${formatHMS(manualCutStart)} (끝 지점도 표시하세요)`;
+  } else {
+    manualRangeDisplay.textContent = `삭제할 구간: ${formatHMS(manualCutStart)} ~ ${formatHMS(manualCutEnd)}`;
+  }
+  deleteRangeBtn.disabled = manualCutStart == null || manualCutEnd == null;
+}
+
+markStartBtn.addEventListener("click", () => {
+  manualCutStart = player.currentTime;
+  manualCutEnd = null;
+  markEndBtn.disabled = false;
+  updateManualRangeDisplay();
+  renderManualCutHighlight();
+});
+
+markEndBtn.addEventListener("click", () => {
+  if (manualCutStart == null) return;
+  const t = player.currentTime;
+  if (t < manualCutStart) {
+    manualCutEnd = manualCutStart;
+    manualCutStart = t;
+  } else {
+    manualCutEnd = t;
+  }
+  updateManualRangeDisplay();
+  renderManualCutHighlight();
+});
+
+clearRangeBtn.addEventListener("click", () => {
+  manualCutStart = null;
+  manualCutEnd = null;
+  markEndBtn.disabled = true;
+  updateManualRangeDisplay();
+  renderManualCutHighlight();
+});
+
+deleteRangeBtn.addEventListener("click", async () => {
+  if (!jobId || !burnSourcePathValue || manualCutStart == null || manualCutEnd == null) return;
+  const ok = confirm(
+    `${formatHMS(manualCutStart)} ~ ${formatHMS(manualCutEnd)} 구간을 영상에서 통째로 삭제합니다.\n` +
+      `되돌릴 수 없는 재인코딩 작업입니다. 계속할까요?`
+  );
+  if (!ok) return;
+
+  cutBtn.disabled = true;
+  deleteRangeBtn.disabled = true;
+  cutCancelBtn.hidden = false;
+  setCutProgress("표시한 구간 삭제 요청 중...", 0);
+
+  const res = await fetch(`/api/videos/${jobId}/cut-silence`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      source_path: burnSourcePathValue,
+      invert: false,
+      manual_range: { start: manualCutStart, end: manualCutEnd },
+    }),
+  });
+  if (!res.ok) {
+    setCutProgress("실패: " + (await res.text()), 0);
+    cutBtn.disabled = false;
+    deleteRangeBtn.disabled = false;
+    cutCancelBtn.hidden = true;
+    return;
+  }
+
+  pollCutStatus();
+});
 
 // --- 재생 속도 ---------------------------------------------------------------
 document.querySelectorAll(".speed-btn").forEach((btn) => {
