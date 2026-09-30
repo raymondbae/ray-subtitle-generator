@@ -100,8 +100,14 @@ def segments_to_ass(segments: list[Segment], style: dict) -> str:
     for seg in segments:
         # { } 는 ASS에서 오버라이드 태그로 해석되므로, 자막 본문에 있으면 전각 문자로 바꿔 무력화한다.
         text = seg.text.strip().replace("{", "｛").replace("}", "｝").replace("\n", "\\N")
+        seg_end = seg.end
+        if seg_end <= seg.start:
+            # 길이가 0 이하인(동기화 편집 중 생긴) 구간이 하나라도 있으면 libass가 파일 전체를
+            # 잘못 렌더링해 앞쪽 자막까지 안 보이는 현상이 있어(실사용에서 확인된 버그),
+            # 최소한의 길이를 보장해 무효 구간이 섞이지 않게 한다.
+            seg_end = seg.start + 0.1
         start = _format_ass_timestamp(seg.start)
-        end = _format_ass_timestamp(seg.end)
+        end = _format_ass_timestamp(seg_end)
         lines.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{text}")
     return "\n".join(lines) + "\n"
 
