@@ -299,11 +299,16 @@ body {
 }
 
 .timeline-waveform {
-  position: absolute;
+  /* absolute로 두면 스크롤 컨테이너 안의 콘텐츠와 함께 스크롤돼 화면 밖으로
+     밀려나버린다(실사용에서 확인된 버그). sticky로 스크롤 뷰포트 왼쪽에
+     고정시켜야, 스크롤해도 항상 화면에 보이는 채로 내용만 다시 그려진다. */
+  position: sticky;
   top: 0;
   left: 0;
   height: 40px;
+  margin-bottom: -40px; /* sticky는 일반 흐름에 자기 높이만큼 자리를 차지하므로, 아래 눈금자와 안 겹치게 상쇄시킨다 */
   pointer-events: none;
+  display: block;
 }
 
 .timeline-content {
