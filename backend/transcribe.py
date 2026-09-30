@@ -4,12 +4,13 @@ from __future__ import annotations
 import array
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 
 import mlx_whisper
 from mlx_whisper.audio import SAMPLE_RATE, load_audio
 
-from srt_utils import Segment
+from srt_utils import Segment, segments_to_ass, srt_to_segments
 
 _MODEL_REPO = "mlx-community/whisper-medium-mlx"
 _CHUNK_SECONDS = 60  # 1분 단위로 나눠서 처리 -> 진행률/실시간 자막 업데이트 + 청크가 짧을수록 타임스탬프 드리프트가 덜 누적됨
@@ -193,51 +194,50 @@ def burn_subtitles(video_path: Path, srt_path: Path, output_path: Path, style: d
     target_bitrate = int(source_bitrate * 1.1) if source_bitrate else 8_000_000
     b_v = f"{target_bitrate}"
 
-    # original_size 기준(1280 너비)에서, 자막 폭 퍼센트만큼만 가운데 정렬로 차지하도록
-    # 좌우 여백(MarginL/MarginR)을 계산한다 -> 한 줄에 들어가는 글자 수를 조절하는 효과.
-    width_percent = max(10, min(100, style.get("width_percent", 90)))
-    margin_lr = round(1280 * (1 - width_percent / 100) / 2)
+    # SRT+force_style+original_size 조합은 일부 ffmpeg 빌드에서 original_size가
+    # 실제로 반영되지 않아 글자 크기/여백이 훨씬 크게 나오는 문제가 있어(검증 완료),
+    # PlayResX/PlayResY를 직접 명시한 정식 .ass 파일을 만들어 스타일을 그 안에 담는다.
+    segments = srt_to_segments(srt_path.read_text(encoding="utf-8"))
+    ass_content = segments_to_ass(segments, style)
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".ass", delete=False, encoding="utf-8"
+    ) as f:
+        f.write(ass_content)
+        ass_path = Path(f.name)
 
-    force_style = (
-        f"FontName={style.get('font_name', 'Apple SD Gothic Neo')},"
-        f"FontSize={style.get('font_size', 32)},"
-        f"PrimaryColour={style.get('primary_colour', '&H00FFFFFF')},"
-        f"OutlineColour={style.get('outline_colour', '&H00000000')},"
-        f"BorderStyle=1,Outline=2,Shadow=1,"
-        f"Alignment={style.get('alignment', 2)},"
-        f"MarginV={style.get('margin_v', 70)},"
-        f"MarginL={margin_lr},MarginR={margin_lr}"
-    )
-    # srt 경로에 콜론/특수문자가 있으면 필터 인자 파싱이 깨지므로 이스케이프한다.
-    escaped_srt = str(srt_path).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
-    vf = f"subtitles='{escaped_srt}':original_size=1280x720:force_style='{force_style}'"
+    try:
+        # 경로에 콜론/특수문자가 있으면 필터 인자 파싱이 깨지므로 이스케이프한다.
+        escaped_ass = str(ass_path).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
+        vf = f"subtitles='{escaped_ass}'"
 
-    cmd = [
-        "ffmpeg", "-y",
-        "-hwaccel", "videotoolbox",  # 4K/HEVC 등 무거운 원본의 디코딩도 하드웨어 가속으로
-        "-i", str(video_path),
-        "-vf", vf,
-        "-c:v", "h264_videotoolbox", "-b:v", b_v,
-        "-c:a", "aac", "-b:a", "192k",
-        "-progress", "pipe:1", "-nostats",
-        str(output_path),
-    ]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    if proc_holder is not None:
-        proc_holder["proc"] = proc
-    time_re = re.compile(r"out_time_ms=(\d+)")
-    for line in proc.stdout:
-        m = time_re.search(line)
-        if m:
-            seconds = int(m.group(1)) / 1_000_000
-            fraction = min(seconds / duration, 1.0) if duration else 0.0
-            yield fraction, seconds, duration
-    proc.wait()
-    if proc_holder is not None and proc_holder.get("cancelled"):
-        raise BurnCancelled("사용자가 중지했습니다.")
-    if proc.returncode != 0:
-        stderr = proc.stderr.read()
-        raise RuntimeError(f"ffmpeg 자막 굽기 실패: {stderr.strip()[-500:]}")
+        cmd = [
+            "ffmpeg", "-y",
+            "-hwaccel", "videotoolbox",  # 4K/HEVC 등 무거운 원본의 디코딩도 하드웨어 가속으로
+            "-i", str(video_path),
+            "-vf", vf,
+            "-c:v", "h264_videotoolbox", "-b:v", b_v,
+            "-c:a", "aac", "-b:a", "192k",
+            "-progress", "pipe:1", "-nostats",
+            str(output_path),
+        ]
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if proc_holder is not None:
+            proc_holder["proc"] = proc
+        time_re = re.compile(r"out_time_ms=(\d+)")
+        for line in proc.stdout:
+            m = time_re.search(line)
+            if m:
+                seconds = int(m.group(1)) / 1_000_000
+                fraction = min(seconds / duration, 1.0) if duration else 0.0
+                yield fraction, seconds, duration
+        proc.wait()
+        if proc_holder is not None and proc_holder.get("cancelled"):
+            raise BurnCancelled("사용자가 중지했습니다.")
+        if proc.returncode != 0:
+            stderr = proc.stderr.read()
+            raise RuntimeError(f"ffmpeg 자막 굽기 실패: {stderr.strip()[-500:]}")
+    finally:
+        ass_path.unlink(missing_ok=True)
 
 
 def retry_hallucinations(segments: list[Segment], audio_path: Path, padding: float = 2.0) -> list[Segment]:

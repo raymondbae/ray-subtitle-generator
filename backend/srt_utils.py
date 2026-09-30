@@ -51,6 +51,61 @@ def segments_to_srt(segments: list[Segment]) -> str:
     return "\n".join(blocks)
 
 
+def _format_ass_timestamp(seconds: float) -> str:
+    """초를 ASS 타임스탬프(H:MM:SS.cc, 센티초) 형식으로 변환."""
+    if seconds < 0:
+        seconds = 0
+    total_cs = round(seconds * 100)
+    hours, rem_cs = divmod(total_cs, 360_000)
+    minutes, rem_cs = divmod(rem_cs, 6_000)
+    secs, cs = divmod(rem_cs, 100)
+    return f"{hours}:{minutes:02d}:{secs:02d}.{cs:02d}"
+
+
+def segments_to_ass(segments: list[Segment], style: dict) -> str:
+    """세그먼트 목록을 스타일이 적용된 ASS 자막으로 직렬화한다.
+
+    ffmpeg의 subtitles 필터에 SRT+force_style+original_size 조합을 쓰면 일부
+    버전/빌드에서 original_size가 실제로 반영되지 않고 libass가 내부 기본값
+    (PlayResY=288로 추정)을 써버려, 글자 크기/여백이 의도한 것보다 몇 배 크게
+    나오는 문제가 있었다. PlayResX/PlayResY를 스크립트 헤더에 직접 명시하는
+    정식 .ass 파일을 만들어 이 문제를 근본적으로 피한다.
+    """
+    width_percent = max(10, min(100, style.get("width_percent", 90)))
+    margin_lr = round(1280 * (1 - width_percent / 100) / 2)
+    font_name = style.get("font_name", "Apple SD Gothic Neo")
+    font_size = style.get("font_size", 32)
+    primary_colour = style.get("primary_colour", "&H00FFFFFF")
+    outline_colour = style.get("outline_colour", "&H00000000")
+    alignment = style.get("alignment", 2)
+    margin_v = style.get("margin_v", 70)
+
+    lines = [
+        "[Script Info]",
+        "ScriptType: v4.00+",
+        "PlayResX: 1280",
+        "PlayResY: 720",
+        "WrapStyle: 2",
+        "",
+        "[V4+ Styles]",
+        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, "
+        "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
+        "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+        f"Style: Default,{font_name},{font_size},{primary_colour},&H000000FF,{outline_colour},"
+        f"&H00000000,0,0,0,0,100,100,0,0,1,2,1,{alignment},{margin_lr},{margin_lr},{margin_v},1",
+        "",
+        "[Events]",
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+    ]
+    for seg in segments:
+        # { } 는 ASS에서 오버라이드 태그로 해석되므로, 자막 본문에 있으면 전각 문자로 바꿔 무력화한다.
+        text = seg.text.strip().replace("{", "｛").replace("}", "｝").replace("\n", "\\N")
+        start = _format_ass_timestamp(seg.start)
+        end = _format_ass_timestamp(seg.end)
+        lines.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{text}")
+    return "\n".join(lines) + "\n"
+
+
 def srt_to_segments(srt_text: str) -> list[Segment]:
     """SRT 텍스트를 세그먼트 목록으로 파싱."""
     segments: list[Segment] = []
