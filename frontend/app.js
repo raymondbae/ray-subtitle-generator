@@ -1402,6 +1402,7 @@ function updateTimelinePlayhead() {
 // 화면을 덮어써버린다. 매번 증가하는 토큰으로 "지금 보낸 것 중 가장 최신 요청"의 응답만
 // 실제로 그리도록 한다 (자막 저장 때와 같은 종류의 경쟁 상태 수정).
 let tlWaveformRequestToken = 0;
+let tlLastDrawnScrollLeft = null; // 스크롤 이벤트가 놓쳐도 따라잡을 수 있게, 마지막으로 실제 그린 위치를 기억해둔다
 
 async function requestWaveformRedraw() {
   clearTimeout(tlWaveformFetchTimer);
@@ -1409,7 +1410,8 @@ async function requestWaveformRedraw() {
     if (!jobId || !tlVideoDuration) return;
     const myToken = ++tlWaveformRequestToken;
     const width = timelineScroll.clientWidth || 1;
-    const start = Math.max(0, timelineScroll.scrollLeft / tlPxPerSecond);
+    const scrollLeft = timelineScroll.scrollLeft;
+    const start = Math.max(0, scrollLeft / tlPxPerSecond);
     const end = Math.min(tlVideoDuration, start + width / tlPxPerSecond);
     const points = Math.max(1, Math.round(width));
 
@@ -1420,8 +1422,17 @@ async function requestWaveformRedraw() {
     timelineWaveform.width = width;
     timelineWaveform.height = 40;
     drawWaveform(data.peaks || []);
+    tlLastDrawnScrollLeft = scrollLeft;
   }, 150);
 }
+
+// scroll 이벤트가 어떤 이유로든 누락되는 경우에 대비한 안전장치 - 주기적으로
+// 마지막으로 그린 위치와 지금 스크롤 위치를 비교해서, 다르면 다시 그린다.
+setInterval(() => {
+  if (!timelinePanel.hidden && timelineScroll.scrollLeft !== tlLastDrawnScrollLeft) {
+    requestWaveformRedraw();
+  }
+}, 400);
 
 function drawWaveform(peaks) {
   const ctx = timelineWaveform.getContext("2d");
