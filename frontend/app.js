@@ -1396,21 +1396,29 @@ function updateTimelinePlayhead() {
   }
 }
 
+// 파형 요청(특히 긴 원본 파일)은 0.3~1초 넘게 걸릴 수 있어, 연속 스크롤 중에는 여러 요청이
+// 겹쳐서 날아간다. 응답이 도착한 순서가 보낸 순서와 다를 수 있어(나중에 보낸 요청의 응답이
+// 먼저 오고, 오래된 요청의 응답이 뒤늦게 도착), 아무 가드 없이 그리면 오래된 응답이 최신
+// 화면을 덮어써버린다. 매번 증가하는 토큰으로 "지금 보낸 것 중 가장 최신 요청"의 응답만
+// 실제로 그리도록 한다 (자막 저장 때와 같은 종류의 경쟁 상태 수정).
+let tlWaveformRequestToken = 0;
+
 async function requestWaveformRedraw() {
   clearTimeout(tlWaveformFetchTimer);
   tlWaveformFetchTimer = setTimeout(async () => {
     if (!jobId || !tlVideoDuration) return;
+    const myToken = ++tlWaveformRequestToken;
     const width = timelineScroll.clientWidth || 1;
     const start = Math.max(0, timelineScroll.scrollLeft / tlPxPerSecond);
     const end = Math.min(tlVideoDuration, start + width / tlPxPerSecond);
     const points = Math.max(1, Math.round(width));
 
-    timelineWaveform.width = width;
-    timelineWaveform.height = 40;
-
     const res = await fetch(`/api/videos/${jobId}/waveform?start=${start}&end=${end}&points=${points}`);
     if (!res.ok) return;
     const data = await res.json();
+    if (myToken !== tlWaveformRequestToken) return; // 그 사이 더 최신 요청이 나갔으면 이 응답은 버린다
+    timelineWaveform.width = width;
+    timelineWaveform.height = 40;
     drawWaveform(data.peaks || []);
   }, 150);
 }
