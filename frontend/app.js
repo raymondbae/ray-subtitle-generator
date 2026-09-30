@@ -1402,12 +1402,20 @@ function updateTimelinePlayhead() {
 // 화면을 덮어써버린다. 매번 증가하는 토큰으로 "지금 보낸 것 중 가장 최신 요청"의 응답만
 // 실제로 그리도록 한다 (자막 저장 때와 같은 종류의 경쟁 상태 수정).
 let tlWaveformRequestToken = 0;
-let tlLastDrawnScrollLeft = null; // 스크롤 이벤트가 놓쳐도 따라잡을 수 있게, 마지막으로 실제 그린 위치를 기억해둔다
+let tlLastDrawnScrollLeft = null; // 스크롤 이벤트를 놓쳐도 따라잡을 수 있게, 마지막으로 실제 그린 위치를 기억해둔다
+let tlWaveformInFlight = false; // 요청이 진행 중일 때 또 새 요청을 겹쳐 보내지 않기 위한 락
 
 async function requestWaveformRedraw() {
   clearTimeout(tlWaveformFetchTimer);
   tlWaveformFetchTimer = setTimeout(async () => {
     if (!jobId || !tlVideoDuration) return;
+    // 이미 요청이 진행 중이면 겹쳐 보내지 않는다. 겹쳐 보내면 파형 요청 하나가
+    // ~1초 가까이 걸리는데 그보다 자주(0.4초마다) 새 요청이 계속 앞의 것을
+    // 무효화시켜서, 어떤 응답도 영원히 성공적으로 그려지지 못하는 무한 경쟁
+    // 상태(livelock)가 생긴다 - 실사용에서 실제로 이 증상이 재현됨.
+    // 진행 중인 요청이 끝나면 다음 scroll 이벤트나 주기 체크가 최신 위치로 다시 요청한다.
+    if (tlWaveformInFlight) return;
+
     const myToken = ++tlWaveformRequestToken;
     const width = timelineScroll.clientWidth || 1;
     const scrollLeft = timelineScroll.scrollLeft;
@@ -1415,19 +1423,25 @@ async function requestWaveformRedraw() {
     const end = Math.min(tlVideoDuration, start + width / tlPxPerSecond);
     const points = Math.max(1, Math.round(width));
 
-    const res = await fetch(`/api/videos/${jobId}/waveform?start=${start}&end=${end}&points=${points}`);
-    if (!res.ok) return;
-    const data = await res.json();
-    if (myToken !== tlWaveformRequestToken) return; // 그 사이 더 최신 요청이 나갔으면 이 응답은 버린다
-    timelineWaveform.width = width;
-    timelineWaveform.height = 40;
-    drawWaveform(data.peaks || []);
-    tlLastDrawnScrollLeft = scrollLeft;
+    tlWaveformInFlight = true;
+    try {
+      const res = await fetch(`/api/videos/${jobId}/waveform?start=${start}&end=${end}&points=${points}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (myToken !== tlWaveformRequestToken) return; // 그 사이 더 최신 요청이 나갔으면 이 응답은 버린다
+      timelineWaveform.width = width;
+      timelineWaveform.height = 40;
+      drawWaveform(data.peaks || []);
+      tlLastDrawnScrollLeft = scrollLeft;
+    } finally {
+      tlWaveformInFlight = false;
+    }
   }, 150);
 }
 
 // scroll 이벤트가 어떤 이유로든 누락되는 경우에 대비한 안전장치 - 주기적으로
 // 마지막으로 그린 위치와 지금 스크롤 위치를 비교해서, 다르면 다시 그린다.
+// (요청이 이미 진행 중이면 requestWaveformRedraw 안에서 알아서 건너뜀)
 setInterval(() => {
   if (!timelinePanel.hidden && timelineScroll.scrollLeft !== tlLastDrawnScrollLeft) {
     requestWaveformRedraw();
