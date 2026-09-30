@@ -1510,7 +1510,7 @@ async function pollBurnStatus() {
   } else if (data.status === "cancelled") {
     burnBtn.disabled = false;
     burnCancelBtn.hidden = true;
-    setBurnProgress("중지됨", 0);
+    setBurnProgress(data.message || "중지됨", 0);
   } else if (data.status === "error") {
     burnBtn.disabled = false;
     burnCancelBtn.hidden = true;
@@ -1575,7 +1575,7 @@ async function pollCutStatus() {
   } else if (data.status === "cancelled") {
     cutBtn.disabled = false;
     cutCancelBtn.hidden = true;
-    setCutProgress("중지됨", 0);
+    setCutProgress(data.message || "중지됨", 0);
   } else if (data.status === "error") {
     cutBtn.disabled = false;
     cutCancelBtn.hidden = true;

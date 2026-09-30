@@ -231,8 +231,14 @@ def _run_burn(job: jobs.Job, source_path: Path, style: dict) -> None:
         job.burn_message = "완료"
     except transcribe.BurnCancelled:
         job.burn_status = "cancelled"
-        job.burn_message = "사용자가 중지했습니다."
-        output_path.unlink(missing_ok=True)
+        # ffmpeg는 SIGTERM을 받으면 지금까지 인코딩한 부분을 정상적으로 마무리하므로,
+        # 중지 시점까지는 완전히 재생 가능한 파일이 남는다 - 스타일 미리 확인 등에
+        # 쓸 수 있게 지우지 않고 남겨둔다.
+        if output_path.exists():
+            job.burn_output_path = str(output_path)
+            job.burn_message = f"사용자가 중지했습니다. (중지 시점까지는 정상 재생됨: {output_path})"
+        else:
+            job.burn_message = "사용자가 중지했습니다."
     except Exception as e:  # noqa: BLE001
         job.burn_status = "error"
         job.burn_message = str(e)
@@ -331,8 +337,13 @@ def _run_cut(job: jobs.Job, source_path: Path, invert: bool = False) -> None:
         job.cut_message = "완료"
     except transcribe.BurnCancelled:
         job.cut_status = "cancelled"
-        job.cut_message = "사용자가 중지했습니다."
-        output_path.unlink(missing_ok=True)
+        # ffmpeg는 SIGTERM을 받으면 지금까지 처리한 부분을 정상적으로 마무리하므로,
+        # 중지 시점까지는 완전히 재생 가능한 파일이 남는다 - 지우지 않고 남겨둔다.
+        if output_path.exists():
+            job.cut_output_path = str(output_path)
+            job.cut_message = f"사용자가 중지했습니다. (중지 시점까지는 정상 재생됨: {output_path})"
+        else:
+            job.cut_message = "사용자가 중지했습니다."
     except Exception as e:  # noqa: BLE001
         job.cut_status = "error"
         job.cut_message = str(e)
