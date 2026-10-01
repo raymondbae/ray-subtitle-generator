@@ -95,11 +95,18 @@ def cut_silence(video_path: Path, keep_ranges: list[tuple[float, float]], output
     source_bitrate = get_video_bitrate(video_path)
     target_bitrate = int(source_bitrate * 1.1) if source_bitrate else 8_000_000
 
-    select_expr = "+".join(f"between(t,{s:.3f},{e:.3f})" for s, e in keep_ranges)
-    filter_complex = (
-        f"[0:v]select='{select_expr}',setpts=N/FRAME_RATE/TB[v];"
-        f"[0:a]aselect='{select_expr}',asetpts=N/SR/TB[a]"
-    )
+    # select/aselect에 between()을 '+'로 수백 개 이어붙이면 ffmpeg의 수식 파서가
+    # "Cannot allocate memory"로 죽는 경우가 있다(자막이 많은 긴 영상에서 실사용 중 확인된
+    # 버그 - keep_ranges 326개, 수식 9천자 넘는 경우 재현됨). trim/atrim + concat은 같은
+    # 결과를 수식 평가 없이 필터 그래프로 표현하므로 구간 개수에 영향을 받지 않는다.
+    parts = []
+    concat_labels = []
+    for i, (s, e) in enumerate(keep_ranges):
+        parts.append(f"[0:v]trim=start={s:.3f}:end={e:.3f},setpts=PTS-STARTPTS[v{i}]")
+        parts.append(f"[0:a]atrim=start={s:.3f}:end={e:.3f},asetpts=PTS-STARTPTS[a{i}]")
+        concat_labels.append(f"[v{i}][a{i}]")
+    parts.append(f"{''.join(concat_labels)}concat=n={len(keep_ranges)}:v=1:a=1[v][a]")
+    filter_complex = ";".join(parts)
 
     cmd = [
         "ffmpeg", "-y",
