@@ -7,7 +7,9 @@
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 from srt_utils import Segment
@@ -90,48 +92,82 @@ def remap_segments(segments: list[Segment], keep_ranges: list[tuple[float, float
 
 
 def cut_silence(video_path: Path, keep_ranges: list[tuple[float, float]], output_path: Path, proc_holder: dict | None = None):
-    """keep_ranges만 남기고 나머지를 잘라내며 (진행률 0~1, 현재 초, 전체 유지 시간(초))를 하나씩 생성한다."""
+    """keep_ranges만 남기고 나머지를 잘라내며 (진행률 0~1, 현재 초, 전체 유지 시간(초))를 하나씩 생성한다.
+
+    구간마다 따로 인코딩한 뒤 concat 데먼서(스트림 복사)로 이어붙인다. 예전에는 select/aselect
+    필터 하나에 모든 구간을 몰아넣었는데, 두 가지 실사용 버그가 있었다:
+    1) between() 조건을 '+'로 수백 개 이어붙이면 ffmpeg 수식 파서가 "Cannot allocate memory"로
+       죽음(구간 326개, 수식 9천자 넘는 경우 재현됨).
+    2) 그걸 trim/atrim+concat 필터 그래프로 바꿔도, 같은 입력을 수십~수백 개의 trim 분기로
+       나눠 먹이면 뒤쪽 구간 중 일부의 오디오가 통째로 무음이 돼버림(실제 4K 영상으로 재현 -
+       12개 구간만 써도 발생, 구간 개수와 무관하게 "여러 분기로 나눠 먹이는 구조" 자체가 원인).
+    구간별로 완전히 독립된 ffmpeg 프로세스를 쓰면 이런 분기 간 간섭이 생길 수가 없다.
+    """
     total_kept = sum(e - s for s, e in keep_ranges)
     source_bitrate = get_video_bitrate(video_path)
     target_bitrate = int(source_bitrate * 1.1) if source_bitrate else 8_000_000
-
-    # select/aselect에 between()을 '+'로 수백 개 이어붙이면 ffmpeg의 수식 파서가
-    # "Cannot allocate memory"로 죽는 경우가 있다(자막이 많은 긴 영상에서 실사용 중 확인된
-    # 버그 - keep_ranges 326개, 수식 9천자 넘는 경우 재현됨). trim/atrim + concat은 같은
-    # 결과를 수식 평가 없이 필터 그래프로 표현하므로 구간 개수에 영향을 받지 않는다.
-    parts = []
-    concat_labels = []
-    for i, (s, e) in enumerate(keep_ranges):
-        parts.append(f"[0:v]trim=start={s:.3f}:end={e:.3f},setpts=PTS-STARTPTS[v{i}]")
-        parts.append(f"[0:a]atrim=start={s:.3f}:end={e:.3f},asetpts=PTS-STARTPTS[a{i}]")
-        concat_labels.append(f"[v{i}][a{i}]")
-    parts.append(f"{''.join(concat_labels)}concat=n={len(keep_ranges)}:v=1:a=1[v][a]")
-    filter_complex = ";".join(parts)
-
-    cmd = [
-        "ffmpeg", "-y",
-        "-hwaccel", "videotoolbox",  # 4K/HEVC 등 무거운 원본의 디코딩도 하드웨어 가속으로
-        "-i", str(video_path),
-        "-filter_complex", filter_complex,
-        "-map", "[v]", "-map", "[a]",
-        "-c:v", "h264_videotoolbox", "-b:v", str(target_bitrate),
-        "-c:a", "aac", "-b:a", "192k",
-        "-progress", "pipe:1", "-nostats",
-        str(output_path),
-    ]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    if proc_holder is not None:
-        proc_holder["proc"] = proc
     time_re = re.compile(r"out_time_ms=(\d+)")
-    for line in proc.stdout:
-        m = time_re.search(line)
-        if m:
-            seconds = int(m.group(1)) / 1_000_000
-            fraction = min(seconds / total_kept, 1.0) if total_kept else 0.0
-            yield fraction, seconds, total_kept
-    proc.wait()
-    if proc_holder is not None and proc_holder.get("cancelled"):
-        raise BurnCancelled("사용자가 중지했습니다.")
-    if proc.returncode != 0:
-        stderr = proc.stderr.read()
-        raise RuntimeError(f"ffmpeg 무음 구간 잘라내기 실패: {stderr.strip()[-500:]}")
+
+    tmpdir = Path(tempfile.mkdtemp(prefix="cut_silence_"))
+    seg_paths: list[Path] = []
+    cumulative = 0.0
+    cancelled = False
+    try:
+        for i, (s, e) in enumerate(keep_ranges):
+            seg_duration = e - s
+            seg_path = tmpdir / f"seg{i:05d}.mp4"
+            cmd = [
+                "ffmpeg", "-y",
+                "-ss", f"{s:.3f}",
+                "-hwaccel", "videotoolbox",  # 4K/HEVC 등 무거운 원본의 디코딩도 하드웨어 가속으로
+                "-i", str(video_path),
+                "-t", f"{seg_duration:.3f}",
+                "-c:v", "h264_videotoolbox", "-b:v", str(target_bitrate),
+                "-c:a", "aac", "-b:a", "192k",
+                "-progress", "pipe:1", "-nostats",
+                str(seg_path),
+            ]
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if proc_holder is not None:
+                proc_holder["proc"] = proc
+            for line in proc.stdout:
+                m = time_re.search(line)
+                if m:
+                    seconds = min(int(m.group(1)) / 1_000_000, seg_duration)
+                    fraction = min((cumulative + seconds) / total_kept, 1.0) if total_kept else 0.0
+                    yield fraction, cumulative + seconds, total_kept
+            proc.wait()
+            if proc_holder is not None and proc_holder.get("cancelled"):
+                cancelled = True
+                # SIGTERM을 받은 ffmpeg는 그 시점까지는 정상 재생되는 파일을 남기므로,
+                # 중지 시점까지 구운 구간도 "지금까지 구운 파일"에 포함시킨다.
+                if seg_path.exists() and seg_path.stat().st_size > 0:
+                    seg_paths.append(seg_path)
+                break
+            if proc.returncode != 0:
+                stderr = proc.stderr.read()
+                raise RuntimeError(
+                    f"ffmpeg 무음 구간 잘라내기 실패({i + 1}/{len(keep_ranges)}번째 구간): {stderr.strip()[-500:]}"
+                )
+            seg_paths.append(seg_path)
+            cumulative += seg_duration
+
+        if seg_paths:
+            concat_list = tmpdir / "concat.txt"
+            concat_list.write_text(
+                "\n".join(f"file '{p.as_posix()}'" for p in seg_paths), encoding="utf-8"
+            )
+            concat_cmd = [
+                "ffmpeg", "-y",
+                "-f", "concat", "-safe", "0", "-i", str(concat_list),
+                "-c", "copy",
+                str(output_path),
+            ]
+            result = subprocess.run(concat_cmd, capture_output=True, text=True)
+            if result.returncode != 0 and not cancelled:
+                raise RuntimeError(f"ffmpeg 구간 합치기 실패: {result.stderr.strip()[-500:]}")
+
+        if cancelled:
+            raise BurnCancelled("사용자가 중지했습니다.")
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
